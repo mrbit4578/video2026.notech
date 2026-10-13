@@ -72,7 +72,8 @@ async function request<T>(
     if (typeof window !== 'undefined') {
       const currentPath = window.location.pathname
       const onAuthPage = currentPath.startsWith('/login') || currentPath.startsWith('/register')
-      if (!onAuthPage) {
+      // Không tự động chuyển hướng khi request chỉ là kiểm tra trạng thái session (/auth/session)
+      if (!onAuthPage && !path.includes('/auth/session')) {
         window.location.href = '/login'
       }
     }
