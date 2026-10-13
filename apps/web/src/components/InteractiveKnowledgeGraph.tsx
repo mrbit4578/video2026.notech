@@ -330,11 +330,16 @@ export function InteractiveKnowledgeGraph() {
 
   // Mặc định chọn provider active đầu tiên + model mặc định của nó
   useEffect(() => {
-    if (!providerId && activeMeta.length > 0) {
-      setProviderId(activeMeta[0].id)
-      setModel(activeMeta[0].defaultModel)
+    if (!providerId) {
+      if (activeMeta.length > 0) {
+        setProviderId(activeMeta[0].id)
+        setModel(activeMeta[0].defaultModel)
+      } else if (providers.length > 0) {
+        setProviderId(providers[0].id)
+        setModel(providers[0].defaultModel)
+      }
     }
-  }, [providerId, activeMeta])
+  }, [providerId, activeMeta, providers])
 
   // Đổi provider → reset model về default nếu model hiện tại không thuộc provider mới
   useEffect(() => {
@@ -365,11 +370,11 @@ export function InteractiveKnowledgeGraph() {
   const aiNodes = nodes.filter((n) => n.aiGenerated).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
   const requireProvider = (): string | null => {
-    if (!providerId) {
-      setScanError('Chưa kết nối AI provider nào. Hãy vào Cài đặt → AI Pro để kết nối key trước khi dùng AI quét ngách.')
-      return null
-    }
-    return providerId
+    if (providerId) return providerId
+    if (activeMeta.length > 0) return activeMeta[0].id
+    if (providers.length > 0) return providers[0].id
+    setScanError('Chưa kết nối AI provider nào. Hãy vào Cài đặt → AI Pro để kết nối key trước khi dùng AI quét ngách.')
+    return null
   }
 
   // ── Giao thức Agent cho quét ngách ──────────────────────────────────

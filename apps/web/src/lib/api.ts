@@ -1,14 +1,11 @@
 /**
- * API client cho backend NestJS thật.
- * - Base URL lấy từ NEXT_PUBLIC_API_URL (mặc định http://localhost:4000)
- * - Dùng `credentials: 'include'` để gửi session cookie (HttpOnly) của backend
- * - 401 → đưa user về /login (route guard). Không redirect khi đang ở
- *   /login hoặc /register để form hiển thị được lỗi đăng nhập.
+ * API client cho hệ thống Kiemtien2026 / VeoGenie.
+ * - Hỗ trợ cả Serverless Next.js API Routes (Vercel) và Backend NestJS độc lập.
+ * - Base URL ưu tiên NEXT_PUBLIC_API_URL, mặc định trỏ về /api (Next.js serverless).
+ * - Dùng `credentials: 'include'` để gửi session cookie của backend/serverless.
  */
 
-/** Base URL của API. Đổi qua biến môi trường NEXT_PUBLIC_API_URL khi deploy. */
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api'
 
 export class ApiError extends Error {
   /** HTTP status; 0 = không kết nối được tới server (network error) */
@@ -29,6 +26,17 @@ function parseJsonSafe(text: string): any {
   }
 }
 
+export function resolveApiUrl(path: string): string {
+  const base = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/+$/, '')
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+
+  // Nếu base kết thúc bằng /api và cleanPath cũng bắt đầu bằng /api/ -> tránh duplicate /api/api/
+  if (base.endsWith('/api') && cleanPath.startsWith('/api/')) {
+    return `${base.slice(0, -4)}${cleanPath}`
+  }
+  return `${base}${cleanPath}`
+}
+
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 async function request<T>(
@@ -38,11 +46,12 @@ async function request<T>(
   /** true → body là FormData, không set Content-Type để browser tự thêm boundary */
   asForm?: boolean,
 ): Promise<T> {
+  const url = resolveApiUrl(path)
   let res: Response
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    res = await fetch(url, {
       method,
-      // Quan trọng: gửi session cookie để backend nhận diện workspace
+      // Quan trọng: gửi session cookie để backend/serverless nhận diện
       credentials: 'include',
       headers: asForm ? undefined : { 'Content-Type': 'application/json' },
       body:
@@ -55,17 +64,14 @@ async function request<T>(
   } catch {
     throw new ApiError(
       0,
-      'Không kết nối được tới API. Kiểm tra backend có đang chạy và NEXT_PUBLIC_API_URL.',
+      'Không kết nối được tới API. Kiểm tra mạng hoặc cấu hình hệ thống.',
     )
   }
 
   if (res.status === 401) {
-    // Chưa đăng nhập / phiên hết hạn → route guard về /login.
-    // Không redirect khi đang ở /login hoặc /register để form hiện được lỗi,
-    // và không redirect vòng lặp.
     if (typeof window !== 'undefined') {
-      const path = window.location.pathname
-      const onAuthPage = path.startsWith('/login') || path.startsWith('/register')
+      const currentPath = window.location.pathname
+      const onAuthPage = currentPath.startsWith('/login') || currentPath.startsWith('/register')
       if (!onAuthPage) {
         window.location.href = '/login'
       }
@@ -92,17 +98,10 @@ export const api = {
   patch: <T>(path: string, body?: unknown) => request<T>(path, 'PATCH', body),
   del: <T>(path: string) => request<T>(path, 'DELETE'),
 
-  /**
-   * Upload multipart FormData (ví dụ file tài liệu RAG). Dùng fetch trực tiếp
-   * với credentials include, không set Content-Type — browser tự thêm boundary.
-   */
+  /** Upload multipart FormData */
   uploadFile: <T>(path: string, formData: FormData) =>
     request<T>(path, 'POST', formData, true),
 
-  /**
-   * URL bắt đầu OAuth cho 1 provider.
-   * Backend redirect thẳng sang trang authorize của provider (không trả JSON).
-   * Dùng bằng cách gán window.location.href = api.oauthStartUrl('google').
-   */
-  oauthStartUrl: (provider: string) => `${API_BASE_URL}/auth/${provider}/start`,
+  /** URL OAuth cho provider */
+  oauthStartUrl: (provider: string) => resolveApiUrl(`/auth/${provider}/start`),
 }

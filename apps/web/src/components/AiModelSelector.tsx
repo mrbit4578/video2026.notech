@@ -1,7 +1,8 @@
 'use client'
 
 import React from 'react'
-import { ChevronDown } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronDown, KeyRound } from 'lucide-react'
 import type { AiProviderMeta } from '../lib/types'
 
 /**
@@ -28,6 +29,19 @@ export function AiModelSelector({
 }) {
   const wrap = fullWidth ? 'w-full' : ''
   const selectW = fullWidth ? 'w-full' : ''
+
+  if (activeMeta.length === 0) {
+    return (
+      <Link
+        href="/settings/ai"
+        className="px-3.5 py-2.5 rounded-lg bg-brand-emerald/15 text-brand-emerald border border-brand-emerald/30 text-xs font-bold hover:bg-brand-emerald/25 flex items-center gap-1.5 transition-all shadow-sm"
+      >
+        <KeyRound className="w-3.5 h-3.5" />
+        <span>Kết nối Key AI Pro</span>
+      </Link>
+    )
+  }
+
   return (
     <>
       <div className={`relative ${wrap}`}>

@@ -509,18 +509,18 @@ export default function AiChatPage() {
   }
 
   const activeConns = connections.filter((c) => c.status === 'active')
-  // Ẩn provider không phải model chat (VD: TinyFish — Search/Fetch API).
-  const activeMeta = providers.filter((p) => p.supportsChat !== false && activeConns.some((c) => c.provider === p.id))
+  const connectedMeta = providers.filter((p) => p.supportsChat !== false && activeConns.some((c) => c.provider === p.id))
+  const activeMeta = connectedMeta.length > 0 ? connectedMeta : (providerId ? providers.filter((p) => p.id === providerId) : [])
   const currentMeta = providers.find((p) => p.id === providerId)
   const providerNameOf = (id: string) => providers.find((p) => p.id === id)?.name ?? id
 
   // Mặc định chọn provider active đầu tiên
   useEffect(() => {
-    if (!providerId && activeMeta.length > 0) {
-      setProviderId(activeMeta[0].id)
-      setModel(activeMeta[0].defaultModel)
+    if (!providerId && connectedMeta.length > 0) {
+      setProviderId(connectedMeta[0].id)
+      setModel(connectedMeta[0].defaultModel)
     }
-  }, [activeMeta, providerId])
+  }, [connectedMeta, providerId])
 
   useEffect(() => {
     if (currentMeta && !currentMeta.models.includes(model)) {
@@ -588,14 +588,27 @@ export default function AiChatPage() {
         <h1 className="text-2xl font-extrabold text-white">Chưa kết nối AI nào</h1>
         <p className="text-sm text-slate-400">
           Hãy thêm API key của gói Pro bạn đã đăng ký (Gemini, ChatGPT, Grok, Claude hoặc DeepSeek)
-          để bắt đầu chat.
+          để bắt đầu chat với toàn bộ sức mạnh mô hình.
         </p>
-        <Link
-          href="/settings/ai"
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-brand-emerald to-brand-cyan text-dark-950 font-bold text-sm hover:opacity-95"
-        >
-          <KeyRound className="w-4 h-4" /> Kết nối AI Pro
-        </Link>
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <Link
+            href="/settings/ai"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-brand-emerald to-brand-cyan text-dark-950 font-bold text-sm hover:opacity-95 shadow-glow-emerald"
+          >
+            <KeyRound className="w-4 h-4" /> Kết nối AI Pro
+          </Link>
+          <button
+            onClick={() => {
+              if (providers.length > 0) {
+                setProviderId(providers[0].id)
+                setModel(providers[0].defaultModel)
+              }
+            }}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white/10 border border-white/15 text-slate-200 font-semibold text-sm hover:bg-white/15 transition-all"
+          >
+            <Sparkles className="w-4 h-4 text-brand-violet" /> Trò chuyện nhanh (Preview)
+          </button>
+        </div>
       </div>
     )
   }

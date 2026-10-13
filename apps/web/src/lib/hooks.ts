@@ -290,12 +290,44 @@ export function useAiConnections() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('orh_ai_connections')
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setConnections(parsed)
+            setLoading(false)
+          }
+        }
+      } catch {}
+    }
+  }, [])
+
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      setConnections(await api.get<AiConnectionInfo[]>('/ai/connections'))
+      const data = await api.get<AiConnectionInfo[]>('/ai/connections')
+      setConnections(data)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('orh_ai_connections', JSON.stringify(data))
+      }
     } catch (err) {
+      if (typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem('orh_ai_connections')
+          if (cached) {
+            const parsed = JSON.parse(cached)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setConnections(parsed)
+              setError(null)
+              return
+            }
+          }
+        } catch {}
+      }
       setError(toMessage(err))
     } finally {
       setLoading(false)
@@ -310,6 +342,15 @@ export function useAiConnections() {
   const connect = useCallback(
     async (provider: string, apiKey: string) => {
       const res = await api.post<AiConnectionInfo>('/ai/connections', { provider, apiKey })
+      if (typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem('orh_ai_connections')
+          const list: AiConnectionInfo[] = cached ? JSON.parse(cached) : []
+          const next = list.filter((c) => c.provider !== provider).concat(res)
+          localStorage.setItem('orh_ai_connections', JSON.stringify(next))
+          setConnections(next)
+        } catch {}
+      }
       await refresh()
       return res
     },
@@ -319,6 +360,17 @@ export function useAiConnections() {
   const remove = useCallback(
     async (provider: string) => {
       await api.del(`/ai/connections/${provider}`)
+      if (typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem('orh_ai_connections')
+          if (cached) {
+            const list: AiConnectionInfo[] = JSON.parse(cached)
+            const next = list.filter((c) => c.provider !== provider)
+            localStorage.setItem('orh_ai_connections', JSON.stringify(next))
+            setConnections(next)
+          }
+        } catch {}
+      }
       await refresh()
     },
     [refresh],
