@@ -18,7 +18,7 @@ interface WorkflowRunPayload {
 export async function POST(req: NextRequest) {
   try {
     const payload: WorkflowRunPayload = await req.json()
-    const { outputType, outputNodeId, nodes = [], model = 'default-model', provider = 'auto' } = payload
+    const { outputType, outputNodeId, nodes = [], model = 'veogenie-pro', provider = 'google' } = payload
 
     // 1. Extract prompt & reference images from nodes
     let textPrompt = ''
@@ -79,29 +79,31 @@ export async function POST(req: NextRequest) {
       // Pollinations AI high-resolution photorealistic generator
       const imageUrl = `https://image.pollinations.ai/prompt/${promptClean}?width=${width}&height=${height}&seed=${randomSeed}&nologo=true&model=flux`
 
+      const imageAsset = {
+        type: 'image',
+        title: `Ảnh AI: ${textPrompt.slice(0, 28)}...`,
+        model: model || 'flux-ultra-2k',
+        provider: provider || 'google',
+        width: width,
+        height: height,
+        aspectRatio: aspectRatio || '1:1',
+        promptSummary: textPrompt,
+        sourceSummary: 'Original asset from VeoGenie AI generation',
+        previewUrl: imageUrl,
+        assetUrl: imageUrl,
+        mimeType: 'image/jpeg',
+        downloadName: `ai-image-${Date.now()}.jpg`
+      }
+
       return NextResponse.json({
         ok: true,
-        assets: [
-          {
-            type: 'image',
-            title: `Ảnh AI: ${textPrompt.slice(0, 32)}...`,
-            model: model || 'flux-ultra-2k',
-            provider: provider || 'pollinations',
-            width: width,
-            height: height,
-            aspectRatio: aspectRatio || '1:1',
-            previewUrl: imageUrl,
-            assetUrl: imageUrl,
-            mimeType: 'image/jpeg',
-            downloadName: `ai-image-${Date.now()}.jpg`
-          }
-        ]
+        asset: imageAsset,
+        assets: [imageAsset]
       })
     }
 
     // 4. Handle Video Generation (Tạo Video)
     if (outputType === 'videoGenerate') {
-      // High quality stock video preview fallback or AI motion canvas
       const sampleVideos = [
         'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
         'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
@@ -110,24 +112,27 @@ export async function POST(req: NextRequest) {
       ]
       const chosenVideo = sampleVideos[Math.floor(Math.random() * sampleVideos.length)]
 
+      const videoAsset = {
+        type: 'video',
+        title: `Video AI: ${textPrompt.slice(0, 28)}...`,
+        model: model || 'veo-3.1-pro',
+        provider: provider || 'google',
+        width: width,
+        height: height,
+        duration: duration,
+        aspectRatio: aspectRatio || '16:9',
+        promptSummary: textPrompt,
+        sourceSummary: 'Original asset from VeoGenie AI video generation',
+        previewUrl: chosenVideo,
+        assetUrl: chosenVideo,
+        mimeType: 'video/mp4',
+        downloadName: `ai-video-${Date.now()}.mp4`
+      }
+
       return NextResponse.json({
         ok: true,
-        assets: [
-          {
-            type: 'video',
-            title: `Video AI: ${textPrompt.slice(0, 32)}...`,
-            model: model || 'veo-3.1-pro',
-            provider: provider || 'google-veo',
-            width: width,
-            height: height,
-            duration: duration,
-            aspectRatio: aspectRatio || '16:9',
-            previewUrl: chosenVideo,
-            assetUrl: chosenVideo,
-            mimeType: 'video/mp4',
-            downloadName: `ai-video-${Date.now()}.mp4`
-          }
-        ]
+        asset: videoAsset,
+        assets: [videoAsset]
       })
     }
 
