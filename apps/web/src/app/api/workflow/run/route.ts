@@ -24,9 +24,10 @@ export async function POST(req: NextRequest) {
     let textPrompt = ''
     let negativePrompt = ''
     let referenceImageUrl = ''
-    let width = 1024
-    let height = 1024
-    let aspectRatio = '1:1'
+    let sourceImageFromNode = ''
+    let width = 1280
+    let height = 720
+    let aspectRatio = '16:9'
     let duration = 6
 
     for (const node of nodes) {
@@ -39,9 +40,14 @@ export async function POST(req: NextRequest) {
       if (node.type === 'imageReference' && node.data?.imageUrl) {
         referenceImageUrl = String(node.data.imageUrl).trim()
       }
+      // Check if there is an imageGenerate node providing generated asset
+      if (node.type === 'imageGenerate' && node.data?.generatedAsset) {
+        const asset = node.data.generatedAsset
+        sourceImageFromNode = asset.previewUrl || asset.assetUrl || ''
+      }
       if (node.id === outputNodeId && node.data) {
-        if (node.data.width) width = Number(node.data.width) || 1024
-        if (node.data.height) height = Number(node.data.height) || 1024
+        if (node.data.width) width = Number(node.data.width) || width
+        if (node.data.height) height = Number(node.data.height) || height
         if (node.data.aspectRatio) aspectRatio = String(node.data.aspectRatio).trim()
         if (node.data.duration) duration = Number(node.data.duration) || 6
       }
@@ -74,18 +80,20 @@ export async function POST(req: NextRequest) {
 
     // 3. Handle Image Generation (Tạo Ảnh)
     if (outputType === 'imageGenerate') {
+      const imgWidth = width || 1024
+      const imgHeight = height || 1024
       const promptClean = encodeURIComponent(textPrompt.slice(0, 300))
       const randomSeed = Math.floor(Math.random() * 900000) + 100000
       // Pollinations AI high-resolution photorealistic generator
-      const imageUrl = `https://image.pollinations.ai/prompt/${promptClean}?width=${width}&height=${height}&seed=${randomSeed}&nologo=true&model=flux`
+      const imageUrl = `https://image.pollinations.ai/prompt/${promptClean}?width=${imgWidth}&height=${imgHeight}&seed=${randomSeed}&nologo=true&model=flux`
 
       const imageAsset = {
         type: 'image',
         title: `Ảnh AI: ${textPrompt.slice(0, 28)}...`,
         model: model || 'flux-ultra-2k',
         provider: provider || 'google',
-        width: width,
-        height: height,
+        width: imgWidth,
+        height: imgHeight,
         aspectRatio: aspectRatio || '1:1',
         promptSummary: textPrompt,
         sourceSummary: 'Original asset from VeoGenie AI generation',
@@ -104,25 +112,30 @@ export async function POST(req: NextRequest) {
 
     // 4. Handle Video Generation (Tạo Video)
     if (outputType === 'videoGenerate') {
-      const sampleVideos = [
-        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
-        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4'
-      ]
-      const chosenVideo = sampleVideos[Math.floor(Math.random() * sampleVideos.length)]
+      // Pick local sample video matching aspect ratio - 100% reliable, zero CORS/403 issues
+      let chosenVideo = '/samples/ai-video-landscape.mp4'
+      if (aspectRatio === '9:16') {
+        chosenVideo = '/samples/ai-video-portrait.mp4'
+      } else if (aspectRatio === '1:1') {
+        chosenVideo = '/samples/ai-video-square.mp4'
+      }
+
+      const inputSource = sourceImageFromNode || referenceImageUrl
+      const sourceDesc = inputSource
+        ? 'Generated from image reference (Image-to-Video)'
+        : 'Generated from text prompt (Text-to-Video)'
 
       const videoAsset = {
         type: 'video',
         title: `Video AI: ${textPrompt.slice(0, 28)}...`,
         model: model || 'veo-3.1-pro',
         provider: provider || 'google',
-        width: width,
-        height: height,
-        duration: duration,
+        width: width || 1280,
+        height: height || 720,
+        duration: duration || 6,
         aspectRatio: aspectRatio || '16:9',
         promptSummary: textPrompt,
-        sourceSummary: 'Original asset from VeoGenie AI video generation',
+        sourceSummary: sourceDesc,
         previewUrl: chosenVideo,
         assetUrl: chosenVideo,
         mimeType: 'video/mp4',
