@@ -16,7 +16,26 @@
             if (cmd === 'read_local_workflow_media_as_data_url') return '';
             if (cmd === 'ensure_flow_account_chrome_debug') return { ok: true };
             if (cmd === 'ensure_dola_account_chrome_debug') return { ok: true };
-            return { ok: true };
+            if (cmd === 'check_runtime_environment') {
+              return {
+                ok: true,
+                issues: [],
+                whisper: { needsVcRedistX64: false, installed: true },
+                actions: { canInstallVcRedistX64: false },
+                backend: { ok: true },
+                ffmpeg: { ok: true, installed: true },
+                ytDlp: { ok: true, installed: true },
+                node: { ok: true, installed: true }
+              };
+            }
+            if (cmd === 'get_studio_media_library_status') return { ok: true, items: [] };
+            if (cmd === 'list_studio_page_media') return [];
+            return {
+              ok: true,
+              issues: [],
+              whisper: { needsVcRedistX64: false, installed: true },
+              actions: { canInstallVcRedistX64: false }
+            };
           },
           transformCallback: (fn) => fn,
           unregisterCallback: () => {},
