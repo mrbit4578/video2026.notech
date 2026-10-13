@@ -23,6 +23,32 @@
           convertFileSrc: (src) => src,
         };
       }
+
+      // Auto-activate VeoGenie VIP Unlimited License in Browser
+      try {
+        const licenseKey = 'workflow-license-snapshot';
+        const machineKey = 'workflow-browser-machine-code';
+        let machineCode = localStorage.getItem(machineKey);
+        if (!machineCode) {
+          machineCode = 'WF-WEB-' + (crypto.randomUUID ? crypto.randomUUID().toUpperCase().slice(0, 16) : 'CD2000F5-07DF-4A');
+          localStorage.setItem(machineKey, machineCode);
+        }
+        const existing = localStorage.getItem(licenseKey);
+        if (!existing || JSON.parse(existing).status !== 'monthly_active') {
+          localStorage.setItem(licenseKey, JSON.stringify({
+            activationCode: 'WFOL1.VIP2026.PERMANENT.AGENT.UNLIMITED',
+            dolaSeedanceActivationCode: 'DOLA.VIP2026.SEEDANCE.PRO',
+            machineCode: machineCode,
+            status: 'monthly_active',
+            expiresAt: '2099-12-31T23:59:59.999Z',
+            licenseKind: 'monthly',
+            licenseEdition: 'agent',
+            validatedAt: new Date().toISOString()
+          }));
+        }
+      } catch (e) {
+        console.warn('Auto license init error', e);
+      }
     </script>
     <script type="module" crossorigin src="./index-CpS7omih.js"></script>
     <link rel="stylesheet" crossorigin href="./index-BDu6iyx9.css" />

@@ -44,10 +44,17 @@ export default function WorkflowCanvasPage() {
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-emerald/15 text-brand-emerald border border-brand-emerald/30">
               Node Canvas
             </span>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-amber-400" />
+              VIP Agent Unlimited
+            </span>
           </div>
-          <p className="text-xs text-slate-400">
-            Kéo thả node quy trình, kết nối Prompt &rarr; Reference Images &rarr; Dola SeaDance 2.5 / Google Veo &rarr; Render Video ngay trên web.
-          </p>
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span>Kéo thả node quy trình, kết nối Prompt &rarr; Reference Images &rarr; Dola SeaDance 2.5 / Google Veo &rarr; Render Video ngay trên web.</span>
+            <span className="hidden lg:inline-block text-[11px] text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/10 font-mono">
+              Key: WFOL1.VIP2026.PERMANENT.AGENT.UNLIMITED
+            </span>
+          </div>
         </div>
 
         {/* Action Controls */}
