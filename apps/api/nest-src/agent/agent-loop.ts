@@ -1,0 +1,701 @@
+/**
+ * Agent loop — port vòng lặp "think → act → observe" của Strix (core/execution.py)
+ * sang TypeScript, chạy đa provider qua dialect tool-calling riêng của từng họ.
+ *
+ * File này thuần TypeScript, không phụ thuộc NestJS để dễ unit-test.
+ * Key/decrypt/audit nằm ở AgentService (NestJS wrapper).
+ */
+import type { ToolDefinition } from './tool-registry'
+import { validateToolArgs, ToolArgError } from './tool-registry'
+import { fetchTimeout } from '../common/safe-fetch'
+
+// ─── Message model trung lập ────────────────────────────────────────────────
+
+export interface ToolCallRequest {
+  id: string
+  name: string
+  args: unknown
+  /**
+   * Gemini: thoughtSignature đi kèm functionCall — API bắt buộc phải echo lại
+   * nguyên vẹn ở mọi turn sau, thiếu là 400 "missing a thought_signature".
+   * Provider khác không có field này (undefined → bỏ qua khi serialize).
+   */
+  thoughtSignature?: string
+}
+
+export interface AgentMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  /** assistant → các tool model muốn gọi ở turn này */
+  toolCalls?: ToolCallRequest[]
+  /** tool → id của tool call mà message này trả kết quả */
+  toolCallId?: string
+  /** tool → tên tool đã chạy */
+  toolName?: string
+}
+
+export interface AssistantTurn {
+  text: string
+  toolCalls: ToolCallRequest[]
+}
+
+/** Backend chat của một provider — dịch message model sang wire format riêng. */
+export interface ChatBackend {
+  readonly label: string
+  send(messages: AgentMessage[], tools: ToolDefinition[]): Promise<AssistantTurn>
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+const PROVIDER_TIMEOUT_MS = 90_000
+/** Chờ giữa các lần thử lại khi provider trả 200 nhưng nội dung rỗng (glitch thoáng qua). */
+const EMPTY_CONTENT_RETRY_MS = 800
+
+function toolSchemaForPrompt(tool: ToolDefinition): Record<string, unknown> {
+  return {
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+  }
+}
+
+/**
+ * Gemini chỉ chấp nhận một tập con của JSON Schema trong function declarations.
+ * Các field như `additionalProperties` hay `$schema` bị API từ chối với 400
+ * (Invalid JSON payload received. Unknown name "additionalProperties").
+ */
+function sanitizeSchemaForGemini(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(sanitizeSchemaForGemini)
+  if (schema !== null && typeof schema === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(schema as Record<string, unknown>)) {
+      if (k === 'additionalProperties' || k === '$schema') continue
+      out[k] = sanitizeSchemaForGemini(v)
+    }
+    return out
+  }
+  return schema
+}
+
+function toolSchemaForGemini(tool: ToolDefinition): Record<string, unknown> {
+  return {
+    name: tool.name,
+    description: tool.description,
+    parameters: sanitizeSchemaForGemini(tool.parameters),
+  }
+}
+
+// ─── Dialect: OpenAI-compatible (OpenAI, xAI/Grok, DeepSeek) ────────────────
+
+/**
+ * Tính thời gian chờ (ms) trước khi thử lại request tới provider.
+ * Trả về 0 = không nên thử lại.
+ * - 429: ưu tiên header `retry-after` (giây), rồi tới gợi ý "try again in Xs"
+ *   trong body; không có gợi ý thì backoff 2s. Chặn trần 30s mỗi lần chờ.
+ * - 400 tool_use_failed: glitch sinh tool-call JSON của model → chờ 600ms.
+ */
+function retryDelayMs(res: Response, bodyText: string): number {
+  if (res.status === 429) {
+    const headerSecs = Number(res.headers.get('retry-after'))
+    if (Number.isFinite(headerSecs) && headerSecs > 0) {
+      return Math.min(headerSecs * 1000, 30000)
+    }
+    const m = /try again in ([\d.]+)s/i.exec(bodyText)
+    if (m) {
+      const secs = parseFloat(m[1])
+      if (Number.isFinite(secs) && secs > 0) return Math.min(secs * 1000, 30000)
+    }
+    return 2000
+  }
+  if (res.status === 400 && /tool_use_failed|failed to parse tool call arguments/i.test(bodyText)) {
+    return 600
+  }
+  return 0
+}
+
+export class OpenAiCompatibleBackend implements ChatBackend {
+  readonly label = 'openai-compatible'
+  constructor(
+    private readonly baseUrl: string,
+    private readonly apiKey: string,
+    private readonly model: string,
+    private readonly maxTokens: number,
+  ) {}
+
+  private toWire(messages: AgentMessage[]): Array<Record<string, unknown>> {
+    return messages.map((m) => {
+      if (m.role === 'assistant' && m.toolCalls?.length) {
+        return {
+          role: 'assistant',
+          content: m.content || null,
+          tool_calls: m.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: 'function',
+            function: { name: tc.name, arguments: JSON.stringify(tc.args ?? {}) },
+          })),
+        }
+      }
+      if (m.role === 'tool') {
+        return { role: 'tool', tool_call_id: m.toolCallId, content: m.content }
+      }
+      return { role: m.role, content: m.content }
+    })
+  }
+
+  async send(messages: AgentMessage[], tools: ToolDefinition[]): Promise<AssistantTurn> {
+    // Chính sách retry cho provider OpenAI-compatible:
+    // - 400 tool_use_failed ("Failed to parse tool call arguments as JSON"): một số
+    //   model (VD: gpt-oss trên Groq) thỉnh thoảng sinh tool-call JSON lỗi — glitch
+    //   ngẫu nhiên của model, thử lại thường hết. Chỉ retry đúng lỗi này, các 400
+    //   khác (sai model, sai schema) báo ngay để không lặp vô ích.
+    // - 429 rate limit: tôn trọng thời gian chờ provider gợi ý ("try again in Xs"
+    //   trong body hoặc header retry-after), tối đa 30s mỗi lần chờ.
+    const maxAttempts = 4
+    let lastErr: unknown = null
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const res = await fetchTimeout(
+        `${this.baseUrl}/chat/completions`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
+          body: JSON.stringify({
+            model: this.model,
+            messages: this.toWire(messages),
+            max_tokens: this.maxTokens,
+            ...(tools.length > 0
+              ? {
+                  tools: tools.map((t) => ({ type: 'function', function: toolSchemaForPrompt(t) })),
+                  tool_choice: 'auto',
+                }
+              : {}),
+          }),
+        },
+        PROVIDER_TIMEOUT_MS,
+      )
+      const text = await res.text()
+      if (res.ok) {
+        const data = JSON.parse(text) as {
+          choices?: Array<{
+            message?: {
+              content?: string | null
+              tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>
+            }
+          }>
+        }
+        const msg = data.choices?.[0]?.message
+        const toolCalls: ToolCallRequest[] = (msg?.tool_calls ?? []).map((tc, i) => {
+          let args: unknown = {}
+          try {
+            args = JSON.parse(tc.function?.arguments ?? '{}')
+          } catch {
+            args = {}
+          }
+          return { id: tc.id ?? `call_${i}`, name: tc.function?.name ?? '', args }
+        })
+        const contentText = msg?.content ?? ''
+        // Một số provider (VD: model free của APInex lúc quá tải) thỉnh thoảng trả
+        // 200 nhưng nội dung rỗng và không có tool call — glitch thoáng qua, thử lại
+        // thay vì coi như agent đã trả lời xong (trước đây gây lỗi "AI không trả về
+        // danh sách ngách hợp lệ" ở vòng quét ngách).
+        if (!contentText && toolCalls.length === 0) {
+          lastErr = new Error('Provider không trả về nội dung (trả về rỗng).')
+          if (attempt >= maxAttempts) break
+          await new Promise((r) => setTimeout(r, EMPTY_CONTENT_RETRY_MS))
+          continue
+        }
+        return { text: contentText, toolCalls }
+      }
+      lastErr = new Error(`Provider trả lỗi ${res.status}: ${text.slice(0, 300)}`)
+      if (attempt >= maxAttempts) break
+      const waitMs = retryDelayMs(res, text)
+      if (waitMs > 0) {
+        await new Promise((r) => setTimeout(r, waitMs))
+        continue
+      }
+      throw lastErr
+    }
+    throw lastErr
+  }
+}
+
+// ─── Dialect: Gemini ────────────────────────────────────────────────────────
+
+export class GeminiBackend implements ChatBackend {
+  readonly label = 'gemini'
+  constructor(
+    private readonly baseUrl: string,
+    private readonly apiKey: string,
+    private readonly model: string,
+    private readonly maxTokens: number,
+  ) {}
+
+  private toContents(messages: AgentMessage[]): Array<Record<string, unknown>> {
+    const contents: Array<Record<string, unknown>> = []
+    const push = (role: string, parts: unknown[]) => {
+      const last = contents[contents.length - 1] as { role?: string; parts?: unknown[] } | undefined
+      if (last && last.role === role) {
+        ;(last.parts as unknown[]).push(...parts)
+      } else {
+        contents.push({ role, parts })
+      }
+    }
+    for (const m of messages) {
+      if (m.role === 'system') continue // → systemInstruction
+      if (m.role === 'assistant' && m.toolCalls?.length) {
+        const parts: unknown[] = []
+        if (m.content) parts.push({ text: m.content })
+        for (const tc of m.toolCalls) {
+          // thoughtSignature nằm ngang hàng functionCall ở part level (docs Gemini) —
+          // echo lại nguyên vẹn, thiếu là turn sau ăn 400.
+          const part: Record<string, unknown> = {
+            functionCall: { name: tc.name, args: tc.args ?? {} },
+          }
+          if (tc.thoughtSignature) part.thoughtSignature = tc.thoughtSignature
+          parts.push(part)
+        }
+        push('model', parts)
+      } else if (m.role === 'tool') {
+        push('user', [
+          { functionResponse: { name: m.toolName, response: { output: m.content } } },
+        ])
+      } else if (m.role === 'assistant') {
+        push('model', [{ text: m.content }])
+      } else {
+        push('user', [{ text: m.content }])
+      }
+    }
+    return contents
+  }
+
+  async send(messages: AgentMessage[], tools: ToolDefinition[]): Promise<AssistantTurn> {
+    const system = messages
+      .filter((m) => m.role === 'system')
+      .map((m) => m.content)
+      .join('\n\n')
+    const res = await fetchTimeout(
+      `${this.baseUrl}/v1beta/models/${encodeURIComponent(this.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+          contents: this.toContents(messages),
+          generationConfig: { maxOutputTokens: this.maxTokens },
+          ...(tools.length > 0
+            ? { tools: [{ functionDeclarations: tools.map(toolSchemaForGemini) }] }
+            : {}),
+        }),
+      },
+      PROVIDER_TIMEOUT_MS,
+    )
+    const text = await res.text()
+    if (!res.ok) throw new Error(`Provider trả lỗi ${res.status}: ${text.slice(0, 300)}`)
+    const data = JSON.parse(text) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            text?: string
+            thoughtSignature?: string
+            functionCall?: { name?: string; args?: unknown; thoughtSignature?: string }
+          }>
+        }
+      }>
+    }
+    const parts = data.candidates?.[0]?.content?.parts ?? []
+    const toolCalls: ToolCallRequest[] = []
+    let out = ''
+    parts.forEach((p, i) => {
+      if (p.text) out += p.text
+      if (p.functionCall?.name) {
+        toolCalls.push({
+          id: `call_${i}`,
+          name: p.functionCall.name,
+          args: p.functionCall.args ?? {},
+          // thoughtSignature nằm ở part level (sibling của functionCall);
+          // đọc thêm dạng nested để phòng hờ variant khác.
+          thoughtSignature: p.thoughtSignature ?? p.functionCall.thoughtSignature,
+        })
+      }
+    })
+    return { text: out, toolCalls }
+  }
+}
+
+// ─── Dialect: Anthropic ─────────────────────────────────────────────────────
+
+export class AnthropicBackend implements ChatBackend {
+  readonly label = 'anthropic'
+  constructor(
+    private readonly baseUrl: string,
+    private readonly apiKey: string,
+    private readonly model: string,
+    private readonly maxTokens: number,
+  ) {}
+
+  private toWire(messages: AgentMessage[]): Array<Record<string, unknown>> {
+    const out: Array<{ role: string; content: unknown[] }> = []
+    const push = (role: string, blocks: unknown[]) => {
+      const last = out[out.length - 1]
+      if (last && last.role === role) {
+        last.content.push(...blocks)
+      } else {
+        out.push({ role, content: blocks })
+      }
+    }
+    for (const m of messages) {
+      if (m.role === 'system') continue
+      if (m.role === 'assistant' && m.toolCalls?.length) {
+        const blocks: unknown[] = []
+        if (m.content) blocks.push({ type: 'text', text: m.content })
+        for (const tc of m.toolCalls) {
+          blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.args ?? {} })
+        }
+        push('assistant', blocks)
+      } else if (m.role === 'tool') {
+        push('user', [{ type: 'tool_result', tool_use_id: m.toolCallId, content: m.content }])
+      } else if (m.role === 'assistant') {
+        push('assistant', [{ type: 'text', text: m.content }])
+      } else {
+        push('user', [{ type: 'text', text: m.content }])
+      }
+    }
+    return out
+  }
+
+  async send(messages: AgentMessage[], tools: ToolDefinition[]): Promise<AssistantTurn> {
+    const system = messages
+      .filter((m) => m.role === 'system')
+      .map((m) => m.content)
+      .join('\n\n')
+    const res = await fetchTimeout(
+      `${this.baseUrl}/v1/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: this.maxTokens,
+          ...(system ? { system } : {}),
+          messages: this.toWire(messages),
+          ...(tools.length > 0
+            ? {
+                tools: tools.map((t) => ({
+                  name: t.name,
+                  description: t.description,
+                  input_schema: t.parameters,
+                })),
+              }
+            : {}),
+        }),
+      },
+      PROVIDER_TIMEOUT_MS,
+    )
+    const text = await res.text()
+    if (!res.ok) throw new Error(`Provider trả lỗi ${res.status}: ${text.slice(0, 300)}`)
+    const data = JSON.parse(text) as {
+      content?: Array<
+        | { type: 'text'; text?: string }
+        | { type: 'tool_use'; id?: string; name?: string; input?: unknown }
+      >
+    }
+    const toolCalls: ToolCallRequest[] = []
+    let out = ''
+    ;(data.content ?? []).forEach((b, i) => {
+      if (b.type === 'text' && 'text' in b) out += b.text ?? ''
+      if (b.type === 'tool_use') {
+        toolCalls.push({
+          id: (b as { id?: string }).id ?? `call_${i}`,
+          name: (b as { name?: string }).name ?? '',
+          args: (b as { input?: unknown }).input ?? {},
+        })
+      }
+    })
+    return { text: out, toolCalls }
+  }
+}
+
+// ─── Agent runner: think → act → observe ────────────────────────────────────
+
+export interface ToolCallTrace {
+  name: string
+  args: unknown
+  ok: boolean
+  /** Output đã truncate — dùng cho trace trả về client. */
+  output: string
+  truncated: boolean
+  ms: number
+}
+
+export interface AgentRunOptions {
+  backend: ChatBackend
+  /** Tools khả dụng (đã lọc allowlist nếu có). */
+  tools: ToolDefinition[]
+  messages: AgentMessage[]
+  /** Số turn tối đa. Mặc định 6, trần 12. */
+  maxTurns?: number
+  /** Timeout mỗi tool. Mặc định 20s. */
+  toolTimeoutMs?: number
+  /** Chế độ output: 'content' (mặc định) hoặc 'json' (bỏ format 3 khối). */
+  outputMode?: AgentOutputMode
+  onEvent?: (event: AgentEvent) => void
+}
+
+export type AgentEvent =
+  | { type: 'turn'; turn: number }
+  | { type: 'tool_call'; name: string; args: unknown }
+  | { type: 'tool_result'; name: string; ok: boolean; ms: number }
+
+export interface AgentRunResult {
+  content: string
+  turns: number
+  toolCalls: ToolCallTrace[]
+  stoppedReason: 'done' | 'max_turns'
+}
+
+export const DEFAULT_MAX_TURNS = 6
+export const MAX_TURNS_CAP = 12
+export const DEFAULT_TOOL_TIMEOUT_MS = 20_000
+/** Trần output mỗi tool đưa vào context — chống tràn context window. */
+export const MAX_TOOL_OUTPUT_CHARS = 8_000
+
+function truncateOutput(output: string): { output: string; truncated: boolean } {
+  if (output.length <= MAX_TOOL_OUTPUT_CHARS) return { output, truncated: false }
+  return { output: output.slice(0, MAX_TOOL_OUTPUT_CHARS) + '\n…[đã cắt bớt]', truncated: true }
+}
+
+async function runToolWithTimeout(
+  tool: ToolDefinition,
+  args: Record<string, unknown>,
+  ctx: { workspaceId: string },
+  timeoutMs: number,
+): Promise<{ output: string; ms: number }> {
+  const started = Date.now()
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const output = await tool.execute(args, { workspaceId: ctx.workspaceId, signal: ctrl.signal })
+    return { output: String(output ?? ''), ms: Date.now() - started }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Chạy vòng lặp agent cho đến khi model trả lời thẳng (không gọi tool nữa)
+ * hoặc chạm trần maxTurns.
+ *
+ * Tối ưu (kaizen 2026-10-02):
+ * - Turn cuối: chèn nudge yêu cầu model tổng hợp và trả lời ngay, không gọi
+ *   thêm tool — tránh kết thúc max_turns với câu trả lời rỗng/yếu.
+ * - Dedupe: cùng một turn mà model gọi trùng tool+args thì chỉ chạy một lần,
+ *   lần sau tái dùng kết quả (đỡ tốn thời gian và quota).
+ */
+/**
+ * Nudge lượt cuối — ép model tổng hợp và trả lời ngay thay vì gọi thêm tool.
+ * Bản JSON nhắc đúng định dạng dữ liệu để model yếu không rơi về format 3 khối.
+ */
+function finalTurnNudge(jsonMode: boolean): AgentMessage {
+  return {
+    role: 'user',
+    content: jsonMode
+      ? 'Đây là lượt cuối cùng của bạn. Hãy tổng hợp mọi thông tin đã thu thập ' +
+        'và trả về output NGAY theo đúng định dạng mà nhiệm vụ quy định ' +
+        '(ví dụ: một khối JSON trong ```json ... ```) — không gọi thêm tool nào nữa, ' +
+        'không thêm chữ nào ngoài khối output.'
+      : 'Đây là lượt cuối cùng của bạn. Hãy tổng hợp mọi thông tin đã thu thập ' +
+        'và trả lời final answer NGAY theo đúng định dạng yêu cầu — không gọi thêm tool nào nữa.',
+  }
+}
+
+export async function runAgent(
+  opts: AgentRunOptions & { workspaceId: string },
+): Promise<AgentRunResult> {
+  const maxTurns = Math.min(Math.max(opts.maxTurns ?? DEFAULT_MAX_TURNS, 1), MAX_TURNS_CAP)
+  const toolTimeoutMs = opts.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS
+  const byName = new Map(opts.tools.map((t) => [t.name, t]))
+  const history: AgentMessage[] = [...opts.messages]
+  const trace: ToolCallTrace[] = []
+
+  let lastText = ''
+  const jsonMode = opts.outputMode === 'json'
+  for (let turn = 1; turn <= maxTurns; turn++) {
+    opts.onEvent?.({ type: 'turn', turn })
+    if (turn === maxTurns && maxTurns > 1) history.push(finalTurnNudge(jsonMode))
+    const assistant = await opts.backend.send(history, opts.tools)
+    lastText = assistant.text
+
+    if (assistant.toolCalls.length === 0) {
+      return { content: lastText, turns: turn, toolCalls: trace, stoppedReason: 'done' }
+    }
+
+    history.push({ role: 'assistant', content: assistant.text, toolCalls: assistant.toolCalls })
+
+    const seenInTurn = new Map<string, ToolCallTrace>()
+    for (const tc of assistant.toolCalls) {
+      opts.onEvent?.({ type: 'tool_call', name: tc.name, args: tc.args })
+      const dedupeKey = `${tc.name}|${JSON.stringify(tc.args ?? {})}`
+      const dup = seenInTurn.get(dedupeKey)
+      if (dup) {
+        // Model gọi trùng — tái dùng kết quả, không chạy lại tool.
+        trace.push({ ...dup })
+        opts.onEvent?.({ type: 'tool_result', name: tc.name, ok: dup.ok, ms: 0 })
+        history.push({ role: 'tool', content: dup.output, toolCallId: tc.id, toolName: tc.name })
+        continue
+      }
+      let ok = true
+      let rawOutput: string
+      let ms = 0
+      const tool = byName.get(tc.name)
+      if (!tool) {
+        ok = false
+        rawOutput = `Tool "${tc.name}" không tồn tại. Chỉ dùng các tool đã liệt kê.`
+      } else {
+        try {
+          const args = validateToolArgs(tc.name, tool.parameters, tc.args)
+          const r = await runToolWithTimeout(tool, args, { workspaceId: opts.workspaceId }, toolTimeoutMs)
+          rawOutput = r.output
+          ms = r.ms
+        } catch (err) {
+          ok = false
+          ms = 0
+          rawOutput =
+            err instanceof ToolArgError
+              ? `Args không hợp lệ: ${err.issues.join('; ')}`
+              : `Tool lỗi: ${err instanceof Error ? err.message : String(err)}`
+        }
+      }
+      const { output, truncated } = truncateOutput(rawOutput)
+      trace.push({ name: tc.name, args: tc.args, ok, output, truncated, ms })
+      seenInTurn.set(dedupeKey, trace[trace.length - 1])
+      opts.onEvent?.({ type: 'tool_result', name: tc.name, ok, ms })
+      history.push({
+        role: 'tool',
+        content: output,
+        toolCallId: tc.id,
+        toolName: tc.name,
+      })
+    }
+  }
+
+  return { content: lastText, turns: maxTurns, toolCalls: trace, stoppedReason: 'max_turns' }
+}
+
+/**
+ * System prompt cho agent mode của Kiemtien2026.
+ *
+ * Vai trò: "kiến trúc sư tăng trưởng" — mọi câu trả lời đều hướng tới chuỗi
+ * giá trị VIRAL → TƯƠNG TÁC → THU NHẬP THỤ ĐỘNG ONLINE.
+ * Cấu trúc học từ audit các system prompt Claude: identity, sứ mệnh, bối cảnh
+ * nền tảng, khung tư duy, cách dùng tools, định dạng output, guardrails.
+ */
+/** Chế độ output của agent: 'content' = nội dung đăng bài (format 3 khối), 'json' = dữ liệu có cấu trúc. */
+export type AgentOutputMode = 'content' | 'json'
+
+/** Section định dạng output cho task sáng tạo nội dung (mặc định). */
+const CONTENT_FORMAT_SECTION = [
+  '## Định dạng final answer — BẮT BUỘC khi giao nội dung video/đăng bài hoàn chỉnh',
+  'Final answer gồm đúng 3 khối, đúng thứ tự, đúng tiêu đề khối (hệ thống tách tự động theo tiêu đề này):',
+  '',
+  '## KỊCH BẢN QUAY',
+  'Kịch bản quay/dựng đầy đủ: phân cảnh, lời thoại/voice-over, text trên màn hình, thời lượng từng đoạn. Người dùng dùng khối này để quay video — KHÔNG đăng nguyên văn.',
+  '',
+  '## CAPTION ĐĂNG BÀI',
+  'Caption đăng trực tiếp lên mạng xã hội: text thuần + emoji + xuống dòng. TUYỆT ĐỐI KHÔNG dùng **, ##, tiêu đề phụ, phân cảnh, timestamp, "Voice-over" hay bất kỳ dấu vết kịch bản nào.',
+  'Cấu trúc caption: 1 câu HOOK mở đầu + 2–3 câu nội dung ngắn + 1 CTA duy nhất + hashtag vừa đủ (5–8 cái).',
+  'CTA ghi "link trong bio" (caption Instagram/TikTok không bấm được link) — KHÔNG dán URL trần vào caption.',
+  '',
+  '## LƯU Ý ĐĂNG BÀI',
+  'Checklist tuân thủ trước khi đăng (gạch đầu dòng, ngắn): disclosure affiliate/tài trợ nếu có; label AI bắt buộc nếu dùng voice/hình AI chân thực; nguồn nhạc đã có quyền thương mại; claim rủi ro cao đã xác minh hoặc đã hạ wording. Nếu không có gì đặc biệt, ghi 1 dòng "Không có lưu ý đặc biệt — vẫn kiểm tra lại G1–G8."',
+  '',
+  'Trước 3 khối trên, cho phép tối đa 4 dòng ngắn: GIỜ ĐĂNG GỢI Ý / KÊNH PHÙ HỢP / NẤC PHỄU (Attention-Trust-Offer). Không thêm mục nào khác.',
+]
+
+/**
+ * Section định dạng output cho task dữ liệu có cấu trúc (VD: quét ngách trả về JSON).
+ * Thay thế HOÀN TOÀN section 3 khối — model yếu không còn bị xung đột chỉ dẫn
+ * (trước đây khiến quét ngách với model free luôn trả về 3 khối thay vì JSON).
+ */
+const JSON_FORMAT_SECTION = [
+  '## Định dạng output — DỮ LIỆU CÓ CẤU TRÚC (nghiêm ngặt)',
+  'Nhiệm vụ này yêu cầu output là DỮ LIỆU CÓ CẤU TRÚC, KHÔNG phải nội dung đăng bài.',
+  '- TUYỆT ĐỐI KHÔNG dùng định dạng 3 khối (KỊCH BẢN QUAY / CAPTION ĐĂNG BÀI / LƯU Ý ĐĂNG BÀI) — các khối đó KHÔNG tồn tại trong nhiệm vụ này.',
+  '- Chỉ trả về đúng định dạng mà nhiệm vụ quy định (ví dụ: một khối JSON trong ```json ... ```), không thêm chữ nào ngoài khối đó.',
+  '- Không thêm lời chào, giải thích, gợi ý bước tiếp theo, hay checklist vào output.',
+]
+
+export function buildAgentSystemPrompt(
+  toolNames: string[],
+  opts?: { outputMode?: AgentOutputMode },
+): string {
+  const jsonMode = opts?.outputMode === 'json'
+  return [
+    '## Danh tính',
+    'Bạn là trợ lý tăng trưởng AI của nền tảng Kiemtien2026, chạy ở chế độ agent: bạn có thể gọi các công cụ (tools) để lấy thông tin trước khi trả lời.',
+    '',
+    '## Sứ mệnh tối thượng',
+    'Giúp người dùng đi trọn chuỗi giá trị: TẠO CONTENT VIRAL → ĐẨY TƯƠNG TÁC NHANH → XÂY DỰNG NGUỒN THU NHẬP THỤ ĐỘNG ONLINE.',
+    'Mọi câu trả lời của bạn đều phải phục vụ trực tiếp hoặc gián tiếp cho sứ mệnh này. Khi người dùng hỏi việc không liên quan, bạn vẫn trả lời đầy đủ, rồi gợi ý một câu ngắn cách việc đó có thể gắn vào chuỗi giá trị trên.',
+    '',
+    '## Bối cảnh nền tảng bạn đang chạy trong',
+    '- Content Studio: nơi soạn, duyệt và quản lý nội dung trước khi đăng.',
+    '- Publish pipeline: đẩy nội dung đã duyệt lên Instagram, Facebook, TikTok (tự động, có hàng đợi và thử lại khi lỗi).',
+    '- Canva pipeline: thiết kế trên Canva → export → đưa về Content Studio thành bản nháp.',
+    '- Kho tri thức: tài liệu, ghi chú nội bộ của người dùng (truy vấn qua knowledge_search).',
+    '- Nhiều AI provider đã kết nối (truy vấn qua list_connected_ai).',
+    '',
+    '## Khung tư duy viral — áp dụng cho mọi nội dung bạn tạo hoặc tư vấn',
+    '1. HOOK 3 giây đầu: câu mở đầu phải khiến người ta dừng cuộn (số liệu sốc, tuyên bố ngược trực giác, câu hỏi xoáy vào nỗi đau, kết quả cụ thể). Không bao giờ mở đầu bằng lời chào chung chung.',
+    '2. MỘT nội dung = MỘT cảm xúc mạnh + MỘT ý tưởng duy nhất (ngạc nhiên, đồng cảm, tò mò, tranh luận lành mạnh, truyền cảm hứng).',
+    '3. Trend-jacking có chọn lọc: bắt trend đang lên nhưng phải bẻ lái về đúng ngách của người dùng, không đu trend vô nghĩa.',
+    '4. CTA rõ ràng trong mọi nội dung: follow, bình luận từ khóa, lưu lại, chia sẻ, hoặc click link — mỗi bài chỉ một CTA chính.',
+    '5. Format theo nền tảng: Reels/TikTok dọc 9:16, 15–45 giây, caption ngắn + hashtag vừa đủ; Facebook ưu tiên câu chuyện và thảo luận.',
+    '6. Tần suất và giờ vàng: đề xuất lịch đăng cụ thể (dùng get_current_time để biết hôm nay là thứ mấy, giờ nào) thay vì nói chung chung.',
+    '',
+    '## Khung monetization — biến attention thành thu nhập thụ động',
+    'Luôn đặt nội dung vào phễu 3 nấc và nói rõ nội dung này phục vụ nấc nào:',
+    '- ATTENTION (thu hút): content viral, mở rộng tệp người xem.',
+    '- TRUST (tin tưởng): content giá trị, chứng minh chuyên môn, nuôi dưỡng khán giả.',
+    '- OFFER (chốt): giới thiệu nguồn thu — ưu tiên các mô hình thụ động: tiếp thị liên kết (affiliate), sản phẩm số (ebook, khóa học, template), quảng cáo, tài trợ.',
+    'Nguyên tắc: 70% nội dung cho Attention + Trust, 30% cho Offer. Không bao giờ biến mọi bài đăng thành bài bán hàng.',
+    '',
+    '## Cách dùng tools',
+    '- Chỉ gọi tool khi thật sự cần thông tin mà bạn không có; gọi với args đúng định dạng; đọc kỹ kết quả rồi mới trả lời.',
+    '- web_search: trend mới, số liệu, giá cả, tin tức sau thời điểm training của bạn. Truy vấn bằng tiếng Việt khi chủ đề liên quan Việt Nam.',
+    '- fetch_url: đọc bài viết/bài viral mẫu để PHÂN TÍCH CẤU TRÚC (hook, nhịp, CTA) — học cấu trúc, không copy nội dung. Chỉ đọc URL lấy từ kết quả web_search hoặc user đưa — KHÔNG đoán URL.',
+    '- knowledge_search: khi câu hỏi liên quan đến tài liệu, ghi chú nội bộ của người dùng.',
+    '- get_current_time: khi cần giờ vàng đăng bài, trend theo thời gian, hoặc nội dung gắn với "hôm nay". Tool này rẻ — cứ gọi khi cần.',
+    '- list_connected_ai: khi người dùng hỏi về AI provider đã kết nối.',
+    `- Các tool khả dụng: ${toolNames.join(', ') || '(không có)'}.`,
+    '',
+    '## Kỷ luật vòng lặp ReAct — chạy nhanh, ít tốn token',
+    '- Thought ngắn (1–2 dòng) rồi hành động ngay; không diễn giải dài dòng trước khi gọi tool.',
+    '- Đã đủ thông tin thì TRẢ LỜI THẲNG, không gọi thêm tool cho có.',
+    '- KHÔNG gọi lại tool với cùng args khi đã có kết quả trong cuộc hội thoại này.',
+    '- Câu hỏi sáng tạo thuần túy (viết kịch bản/caption từ ý tưởng của user, không cần dữ liệu ngoài) → viết luôn, không gọi tool.',
+    '- Các tool độc lập gọi SONG SONG trong cùng một turn (ví dụ: web_search trend + get_current_time).',
+    '- Tool trả lỗi → đọc kỹ thông báo lỗi, sửa args và thử lại tối đa 2 lần cho cùng một mục đích rồi chuyển hướng khác.',
+    '- Nếu hết lượt mà chưa xong việc: trả lời với những gì đã thu thập được + liệt kê rõ bước còn lại để user tiếp tục.',
+    '',
+    '## Phong cách trả lời',
+    '- Trả lời bằng tiếng Việt, xưng mình/bạn; ngắn gọn, đi thẳng vào việc; hành động cụ thể quan trọng hơn lý thuyết.',
+    '- Khi tư vấn chiến lược, luôn kết thúc bằng 1–3 bước hành động tiếp theo người dùng có thể làm ngay trong Kiemtien2026 (ví dụ: "tạo 3 hook trong Content Studio", "đẩy video này lên queue publish TikTok").',
+    '',
+    ...(jsonMode ? JSON_FORMAT_SECTION : CONTENT_FORMAT_SECTION),
+    '',
+    '## Doctrine video faceless — áp dụng khi làm nội dung từ nguồn viral',
+    '- Original-first: dùng video viral làm TÍN HIỆU nghiên cứu (chủ đề, nhu cầu khán giả), KHÔNG tải lại, KHÔNG đọc lại lời, KHÔNG dựng lại montage của nguồn. Có tool video_brief để chốt góc — bắt buộc qua G0 originality test.',
+    '- Evidence-first: claim nào chưa xác minh thì không thành khẳng định; claim sức khỏe/tài chính/chính trị cần nguồn độc lập. Có tool video_script để viết kịch bản — tool sẽ chặn claim high/critical unverified.',
+    '- Permission-first: nhạc/hình/voice phải có quyền dùng thương mại; ghi vào rights ledger trước khi publish. Dùng tool video_risk_score trước khi chốt xuất bản.',
+    '',
+    '## Guardrails — tuyệt đối tuân thủ',
+    '- Không bao giờ tiết lộ API key, token hay bất kỳ thông tin nhạy cảm nào.',
+    '- Chỉ tư vấn tăng trưởng HỢP LỆ và bền vững: KHÔNG mua tương tác ảo, KHÔNG dùng bot seeding, KHÔNG spam, KHÔNG thủ thuật lách chính sách nền tảng.',
+    '- KHÔNG hứa hẹn thu nhập chắc chắn ("đảm bảo X triệu/tháng", "làm giàu nhanh"). Luôn nói rõ tính bất định, rủi ro và rằng kết quả phụ thuộc vào thực thi đều đặn.',
+    '- Tôn trọng bản quyền: học cấu trúc của content viral, không sao chép nguyên văn nội dung của người khác.',
+    '- Từ chối nội dung lừa đảo, cờ bạc, và nội dung người lớn.',
+  ].join('\n')
+}

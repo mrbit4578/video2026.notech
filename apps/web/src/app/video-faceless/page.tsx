@@ -1,0 +1,1713 @@
+'use client'
+
+import { useState, useEffect, useCallback, Suspense, type ChangeEvent } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import {
+  Plus, ArrowLeft, Clapperboard, AlertTriangle, Trash2, Send, ShieldCheck,
+  Bot, ClipboardCheck, Gauge, Save, CheckCircle2, XCircle, Link2, Sparkles,
+  FileText, Scale, BrainCircuit, Zap, Coins, BadgeCheck, Download,
+} from 'lucide-react'
+import {
+  useVideoProjects,
+  getVideoProject,
+  getDirectorBrief,
+  updateVideoProject,
+  updateVideoGates,
+  scoreVideoRisk,
+  getVideoReadiness,
+  sendVideoToContentStudio,
+  addVideoAsset,
+  setVideoAssetStatus,
+  deleteVideoAsset,
+  addVideoClaim,
+  setVideoClaimStatus,
+  deleteVideoClaim,
+  getVideoClaimCheck,
+  getVideoCompliance,
+  setVideoCompliance,
+  getMmoModels,
+  listMmoOffers,
+  createMmoOffer,
+  updateMmoOffer,
+  deleteMmoOffer,
+  upsertVideoEconomics,
+  getEconomicsSummary,
+  addVideoAiEntry,
+  setVideoAiLabel,
+  deleteVideoAiEntry,
+  listVideoPresets,
+  createVideoProjectFromPreset,
+  type VideoPresetSummary,
+} from '../../lib/hooks'
+import { VideoGenStudio } from './studio'
+import {
+  VIDEO_STAGES,
+  VIDEO_STAGE_LABELS,
+  GATE_LABELS,
+  type VideoProjectSummary,
+  type VideoProjectDetail,
+  type GateState,
+  type RiskResult,
+  type PublishReadiness,
+  type ClaimCheckResult,
+  type ComplianceState,
+  type MonetizationOffer,
+  type MonetizationModel,
+  type EconomicsSummary,
+} from '../../lib/types'
+
+const TABS = [
+  { id: 'overview', label: 'Tổng quan', icon: FileText },
+  { id: 'script', label: 'Kịch bản', icon: Clapperboard },
+  { id: 'assets', label: 'Quyền', icon: Scale },
+  { id: 'claims', label: 'Kiểm chứng', icon: ShieldCheck },
+  { id: 'economics', label: 'Kinh tế', icon: Coins },
+  { id: 'ai', label: 'AI Register', icon: BrainCircuit },
+  { id: 'qa', label: 'QA & Risk', icon: Gauge },
+  { id: 'build', label: 'Dựng video', icon: Zap },
+] as const
+
+type TabId = (typeof TABS)[number]['id']
+
+const inputCls =
+  'w-full px-3 py-2 rounded-lg bg-dark-900 border border-dark-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-brand-emerald/60'
+const labelCls = 'block text-xs font-semibold text-slate-400 mb-1.5'
+const btnPrimary =
+  'px-4 py-2 rounded-xl bg-gradient-to-r from-brand-emerald to-brand-cyan text-dark-950 font-bold text-xs flex items-center gap-2 hover:opacity-90 transition-all disabled:opacity-50'
+const btnGhost =
+  'px-4 py-2 rounded-xl border border-dark-700 text-slate-300 text-xs font-semibold hover:border-brand-emerald/50 hover:text-white transition-all'
+
+function timeAgo(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 1) return 'vừa xong'
+  if (mins < 60) return `${mins} phút trước`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} giờ trước`
+  return `${Math.floor(hours / 24)} ngày trước`
+}
+
+function riskBadge(score: number | null) {
+  if (score === null || score === undefined)
+    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-dark-800 text-slate-400">Chưa chấm</span>
+  const cls =
+    score <= 3
+      ? 'bg-brand-emerald/15 text-brand-emerald border-brand-emerald/30'
+      : score <= 7
+        ? 'bg-brand-amber/15 text-brand-amber border-brand-amber/30'
+        : 'bg-red-500/15 text-red-300 border-red-500/30'
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${cls}`}>
+      Risk {score}/18
+    </span>
+  )
+}
+
+/* ─── Trang chính ─── */
+
+export default function VideoFacelessPage() {
+  return (
+    <Suspense fallback={<p className="text-sm text-slate-400">Đang tải…</p>}>
+      <VideoFacelessInner />
+    </Suspense>
+  )
+}
+
+function VideoFacelessInner() {
+  const searchParams = useSearchParams()
+  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('project'))
+  // Mở thẳng Studio (từ AI Copilot "Tạo Video Faceless"): ?studio=1&provider=...
+  const [studio, setStudio] = useState(() => searchParams.get('studio') === '1')
+  const [studioProvider, setStudioProvider] = useState<string | null>(() =>
+    searchParams.get('provider'),
+  )
+  // Mở thẳng tab trong chi tiết dự án (mapping từ trang ngách): ?project=<id>&tab=script
+  const [initialTab] = useState(() => searchParams.get('tab'))
+  if (selectedId && !studio)
+    return <ProjectDetail id={selectedId} initialTab={initialTab} onBack={() => setSelectedId(null)} />
+  if (studio)
+    return (
+      <VideoGenStudio
+        initialProvider={studioProvider}
+        projectId={selectedId}
+        onBack={() => {
+          setStudio(false)
+          setStudioProvider(null)
+        }}
+        onCreatedProject={(id) => {
+          setStudio(false)
+          setStudioProvider(null)
+          setSelectedId(id)
+        }}
+      />
+    )
+  return (
+    <ProjectList
+      onSelect={setSelectedId}
+      onStudio={() => {
+        setStudioProvider(null)
+        setStudio(true)
+      }}
+    />
+  )
+}
+
+/* ─── Danh sách dự án ─── */
+
+function ProjectList({ onSelect, onStudio }: { onSelect: (id: string) => void; onStudio: () => void }) {
+  const { projects, loading, error, create, remove, refresh } = useVideoProjects()
+  const [showNew, setShowNew] = useState(false)
+  const [title, setTitle] = useState('')
+  const [series, setSeries] = useState('')
+  const [viralSourceUrl, setViralSourceUrl] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  // Preset shot-list (timelapse công trình…)
+  const [presets, setPresets] = useState<VideoPresetSummary[]>([])
+  const [presetId, setPresetId] = useState('')
+  const [boiCanh, setBoiCanh] = useState('')
+  const [vatNeo, setVatNeo] = useState('')
+  const [kienTruc, setKienTruc] = useState('')
+  const [chu, setChu] = useState('Nể phục')
+  const [duration, setDuration] = useState<'short' | 'long'>('short')
+  const [presetError, setPresetError] = useState<string | null>(null)
+
+  const openNew = () => {
+    setPresetError(null)
+    setShowNew(true)
+    if (presets.length === 0) {
+      listVideoPresets().then(setPresets).catch(() => {})
+    }
+  }
+
+  const resetForm = () => {
+    setShowNew(false)
+    setTitle(''); setSeries(''); setViralSourceUrl('')
+    setPresetId(''); setBoiCanh(''); setVatNeo(''); setKienTruc('')
+    setChu('Nể phục'); setDuration('short'); setPresetError(null)
+  }
+
+  const doCreate = async () => {
+    setPresetError(null)
+    // Tạo từ preset shot-list
+    if (presetId) {
+      if (!boiCanh.trim() || !vatNeo.trim() || !kienTruc.trim()) {
+        setPresetError('Hãy điền đủ Bối cảnh, Vật neo và Kiến trúc để render shot-list.')
+        return
+      }
+      setCreating(true)
+      try {
+        const r = await createVideoProjectFromPreset({
+          presetId,
+          title: title.trim() || undefined,
+          series: series.trim() || undefined,
+          boiCanh: boiCanh.trim(),
+          vatNeo: vatNeo.trim(),
+          kienTruc: kienTruc.trim(),
+          chu: chu.trim() || undefined,
+          duration,
+        })
+        await refresh()
+        resetForm()
+        onSelect(r.projectId)
+      } catch (err) {
+        setPresetError(err instanceof Error ? err.message : 'Tạo project từ preset thất bại.')
+      } finally {
+        setCreating(false)
+      }
+      return
+    }
+    // Tạo thủ công như cũ
+    if (!title.trim()) return
+    setCreating(true)
+    try {
+      const p = await create({
+        title: title.trim(),
+        series: series.trim() || undefined,
+        viralSourceUrl: viralSourceUrl.trim() || undefined,
+      })
+      resetForm()
+      onSelect(p.id)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <Clapperboard className="w-5 h-5 text-brand-emerald" />
+            Video Faceless
+          </h1>
+          <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+            Pipeline từ tín hiệu viral → sản phẩm gốc: brief qua G0 originality,
+            claim ledger, rights ledger, AI register, 8 cổng QA, risk score —
+            rồi gửi sang Content Studio để xuất bản.
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={onStudio} className={btnGhost}>
+            <Zap className="w-4 h-4" /> Studio tạo video
+          </button>
+          <button onClick={openNew} className={btnPrimary}>
+            <Plus className="w-4 h-4" /> Dự án mới
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4 rounded-xl bg-brand-cyan/5 border border-brand-cyan/20 flex items-start gap-3">
+        <Bot className="w-5 h-5 text-brand-cyan shrink-0 mt-0.5" />
+        <div className="text-xs text-slate-300 leading-relaxed">
+          <span className="font-bold text-white">Làm cùng AI:</span> mở{' '}
+          <Link href="/ai-copilot" className="text-brand-cyan underline font-semibold">
+            AI Copilot (ReAct)
+          </Link>{' '}
+          hoặc{' '}
+          <Link href="/ai-chat" className="text-brand-cyan underline font-semibold">
+            AI Chat Pro (chế độ Agent)
+          </Link>{' '}
+          và nhờ agent chạy pipeline: <code className="text-brand-emerald">video_brief</code> (phân tích
+          nguồn viral → chốt góc qua G0) → <code className="text-brand-emerald">video_script</code> (viết
+          kịch bản, chặn claim chưa xác minh) → <code className="text-brand-emerald">video_risk_score</code> (chấm
+          rủi ro). Khi ưng kịch bản, bấm nút <span className="font-semibold text-white">Tạo Video Faceless</span> trên
+          Copilot (hoặc icon 🎬 trên tin nhắn chat) — kịch bản + caption tự nạp vào dự án mới và mở thẳng pipeline
+          kiểm duyệt.
+        </div>
+      </div>
+
+      {loading && <p className="text-sm text-slate-400">Đang tải dự án…</p>}
+      {error && <p className="text-sm text-red-300">{error}</p>}
+
+      {!loading && projects.length === 0 && (
+        <div className="p-10 rounded-2xl border border-dashed border-dark-700 text-center">
+          <Clapperboard className="w-8 h-8 text-slate-600 mx-auto mb-3" />
+          <p className="text-sm text-slate-400">Chưa có dự án nào. Tạo dự án đầu tiên từ một video viral bạn muốn học hỏi.</p>
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {projects.map((p) => (
+          <div
+            key={p.id}
+            onClick={() => onSelect(p.id)}
+            className="p-4 rounded-2xl bg-dark-900/60 border border-dark-700 hover:border-brand-emerald/40 cursor-pointer transition-all"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-bold text-sm text-white line-clamp-2">{p.title}</h3>
+              {riskBadge(p.riskScore)}
+            </div>
+            {p.series && <p className="text-[11px] text-brand-cyan mt-1">Series: {p.series}</p>}
+            <div className="flex items-center gap-2 mt-3 text-[11px]">
+              <span className="px-2 py-0.5 rounded-full bg-brand-emerald/10 text-brand-emerald border border-brand-emerald/25 font-semibold">
+                {VIDEO_STAGE_LABELS[p.stage] ?? p.stage}
+              </span>
+              <span className="text-slate-500">
+                {p.assetCount} asset · {p.claimCount} claim · {p.aiEntryCount} AI
+              </span>
+            </div>
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-[11px] text-slate-500">{timeAgo(p.updatedAt)}</span>
+              {p.contentItemId ? (
+                <span className="text-[11px] text-brand-emerald flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Đã sang Content Studio
+                </span>
+              ) : confirmDelete === p.id ? (
+                <span className="flex gap-1.5">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); remove(p.id); setConfirmDelete(null) }}
+                    className="text-[11px] px-2 py-1 rounded-lg bg-red-500/20 text-red-300 border border-red-500/40 font-bold"
+                  >
+                    Xóa thật?
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmDelete(null) }}
+                    className="text-[11px] px-2 py-1 rounded-lg border border-dark-700 text-slate-400"
+                  >
+                    Hủy
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmDelete(p.id); setTimeout(() => setConfirmDelete(null), 4000) }}
+                  className="text-[11px] text-slate-500 hover:text-red-300 flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Xóa
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showNew && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowNew(false)}>
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 rounded-2xl bg-dark-900 border border-dark-700 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-bold text-white">Dự án video mới</h2>
+            <div>
+              <label className={labelCls}>Tiêu đề *</label>
+              <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="VD: 3 sai lầm khiến điều hòa tốn điện gấp đôi" />
+            </div>
+            <div>
+              <label className={labelCls}>Series format (không bắt buộc)</label>
+              <input className={inputCls} value={series} onChange={(e) => setSeries(e.target.value)} placeholder="VD: 3 phút kiểm chứng" />
+            </div>
+            <div>
+              <label className={labelCls}>URL video viral tham khảo (chỉ để phân tích — không tải lại)</label>
+              <input className={inputCls} value={viralSourceUrl} onChange={(e) => setViralSourceUrl(e.target.value)} placeholder="https://..." />
+            </div>
+            <div className="border-t border-dark-700 pt-4">
+              <label className={labelCls}>Tạo nhanh từ preset shot-list</label>
+              <select className={inputCls} value={presetId} onChange={(e) => setPresetId(e.target.value)}>
+                <option value="">— Tự tạo thủ công —</option>
+                {presets.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.keyframeCount} keyframe)</option>
+                ))}
+              </select>
+              {presetId && (
+                <div className="mt-3 space-y-3">
+                  <p className="text-[11px] text-dark-400">{presets.find((p) => p.id === presetId)?.tagline}</p>
+                  <div>
+                    <label className={labelCls}>Bối cảnh lô đất *</label>
+                    <input className={inputCls} value={boiCanh} onChange={(e) => setBoiCanh(e.target.value)} placeholder="VD: narrow urban lot between two houses, street in foreground" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Vật neo — nghịch lý không gian *</label>
+                    <input className={inputCls} value={vatNeo} onChange={(e) => setVatNeo(e.target.value)} placeholder="VD: giant granite boulder, 8 meters tall" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Kiến trúc công trình cuối *</label>
+                    <input className={inputCls} value={kienTruc} onChange={(e) => setKienTruc(e.target.value)} placeholder="VD: modern minimalist villa, concrete, glass, wood slats" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Chữ overlay</label>
+                      <input className={inputCls} value={chu} onChange={(e) => setChu(e.target.value)} placeholder="Nể phục" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Thời lượng</label>
+                      <select className={inputCls} value={duration} onChange={(e) => setDuration(e.target.value as 'short' | 'long')}>
+                        {presets.find((p) => p.id === presetId)?.durations.map((d) => (
+                          <option key={d.id} value={d.id}>{d.label} ({d.shotCount} shot)</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {presetError && <p className="text-xs text-red-400">{presetError}</p>}
+                  <p className="text-[11px] text-dark-400">Tạo từ preset sẽ tự render shot-list thành kịch bản, điền brief, ghi AI register A3 (bắt buộc gắn nhãn AI khi đăng).</p>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowNew(false)} className={btnGhost}>Hủy</button>
+              <button onClick={doCreate} disabled={creating || (!presetId && !title.trim())} className={btnPrimary}>
+                {creating ? 'Đang tạo…' : 'Tạo dự án'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─── Chi tiết dự án ─── */
+
+function ProjectDetail({ id, initialTab, onBack }: { id: string; initialTab?: string | null; onBack: () => void }) {
+  const [project, setProject] = useState<VideoProjectDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<TabId>(() =>
+    TABS.some((t) => t.id === initialTab) ? (initialTab as TabId) : 'overview',
+  )
+
+  const refresh = useCallback(async () => {
+    try {
+      setProject(await getVideoProject(id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi tải dự án')
+    } finally {
+      setLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const setStage = async (stage: string) => {
+    if (!project || stage === project.stage) return
+    await updateVideoProject(id, { stage })
+    setProject({ ...project, stage })
+  }
+
+  if (loading) return <p className="text-sm text-slate-400">Đang tải dự án…</p>
+  if (error || !project) return <p className="text-sm text-red-300">{error ?? 'Không tìm thấy dự án'}</p>
+
+  const stageIdx = VIDEO_STAGES.indexOf(project.stage as (typeof VIDEO_STAGES)[number])
+
+  return (
+    <div className="space-y-5">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white">
+        <ArrowLeft className="w-4 h-4" /> Tất cả dự án
+      </button>
+
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-lg font-bold text-white">{project.title}</h1>
+          {project.series && <p className="text-xs text-brand-cyan mt-0.5">Series: {project.series}</p>}
+        </div>
+        {riskBadge(project.riskScore)}
+      </div>
+
+      {/* Stepper 10 bước */}
+      <div className="flex gap-1.5 overflow-x-auto pb-2">
+        {VIDEO_STAGES.map((s, i) => {
+          const done = i < stageIdx
+          const current = i === stageIdx
+          return (
+            <button
+              key={s}
+              onClick={() => setStage(s)}
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                current
+                  ? 'bg-brand-emerald/20 text-brand-emerald border-brand-emerald/40'
+                  : done
+                    ? 'bg-dark-800 text-slate-300 border-dark-700 hover:border-brand-emerald/40'
+                    : 'bg-dark-900 text-slate-500 border-dark-800 hover:border-dark-600'
+              }`}
+            >
+              <span className="opacity-60 mr-1">{i + 1}</span>
+              {VIDEO_STAGE_LABELS[s]}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 overflow-x-auto border-b border-dark-800">
+        {TABS.map((t) => {
+          const Icon = t.icon
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all ${
+                tab === t.id
+                  ? 'text-brand-emerald border-brand-emerald'
+                  : 'text-slate-400 border-transparent hover:text-slate-200'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {t.label}
+              {t.id === 'assets' && project.assets.length > 0 && (
+                <span className="ml-1 px-1.5 rounded-full bg-dark-800 text-[10px]">{project.assets.length}</span>
+              )}
+              {t.id === 'claims' && project.claims.length > 0 && (
+                <span className="ml-1 px-1.5 rounded-full bg-dark-800 text-[10px]">{project.claims.length}</span>
+              )}
+              {t.id === 'ai' && project.aiEntries.length > 0 && (
+                <span className="ml-1 px-1.5 rounded-full bg-dark-800 text-[10px]">{project.aiEntries.length}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {tab === 'overview' && <OverviewTab project={project} onSaved={refresh} />}
+      {tab === 'script' && <ScriptTab project={project} onSaved={refresh} />}
+      {tab === 'assets' && <AssetsTab project={project} onChanged={refresh} />}
+      {tab === 'claims' && <ClaimsTab project={project} onChanged={refresh} />}
+      {tab === 'economics' && <EconomicsTab project={project} />}
+      {tab === 'ai' && <AiRegisterTab project={project} onChanged={refresh} />}
+      {tab === 'qa' && <QaRiskTab project={project} onChanged={refresh} />}
+      {tab === 'build' && (
+        <VideoGenStudio
+          projectId={project.id}
+          initialTopic={project.title}
+          initialTitle={project.title}
+          sourceScript={project.script || undefined}
+          backLabel="Về tổng quan dự án"
+          onBack={() => setTab('overview')}
+          onCreatedProject={() => {
+            setStage('edit')
+            refresh()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ─── Tab: Tổng quan ─── */
+
+function OverviewTab({ project, onSaved }: { project: VideoProjectDetail; onSaved: () => void }) {
+  const [viralSourceUrl, setViralSourceUrl] = useState(project.viralSourceUrl ?? '')
+  const [sourceNote, setSourceNote] = useState(project.sourceNote ?? '')
+  const [angle, setAngle] = useState(project.angle ?? '')
+  const [publishNotes, setPublishNotes] = useState(project.publishNotes ?? '')
+  const [saving, setSaving] = useState(false)
+  const [savedTick, setSavedTick] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await updateVideoProject(project.id, { viralSourceUrl, sourceNote, angle, publishNotes })
+      onSaved()
+      setSavedTick(true)
+      setTimeout(() => setSavedTick(false), 2000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  let brief: Record<string, unknown> | null = null
+  try {
+    brief = project.briefJson ? JSON.parse(project.briefJson) : null
+  } catch { /* brief không phải JSON hợp lệ */ }
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="p-4 rounded-xl bg-brand-amber/5 border border-brand-amber/20 text-xs text-slate-300 leading-relaxed">
+        <span className="font-bold text-brand-amber">Nguyên tắc:</span> video viral là{' '}
+        <span className="font-semibold text-white">tín hiệu nghiên cứu</span>, không phải nguyên liệu.
+        Không tải lại, không đọc lại lời, không dựng lại montage của nguồn.
+      </div>
+
+      <div>
+        <label className={labelCls}>URL video viral tham khảo</label>
+        <input className={inputCls} value={viralSourceUrl} onChange={(e) => setViralSourceUrl(e.target.value)} placeholder="https://..." />
+      </div>
+      <div>
+        <label className={labelCls}>Phân tích nguồn (bước 2) — chủ đề / hook / claim / format / phản ứng khán giả</label>
+        <textarea className={inputCls} rows={4} value={sourceNote} onChange={(e) => setSourceNote(e.target.value)} placeholder="Video nói về… hook là… claim chính chưa kiểm chứng là… khán giả comment hỏi nhiều về…" />
+      </div>
+      <div>
+        <label className={labelCls}>Góc mới đã chọn (bước 3) — phải qua G0 originality test</label>
+        <textarea className={inputCls} rows={3} value={angle} onChange={(e) => setAngle(e.target.value)} placeholder="VD: Kiểm chứng 3 điều kiện để mẹo đúng + chỉ ra trường hợp thất bại" />
+      </div>
+
+      {brief && (
+        <div>
+          <label className={labelCls}>Brief từ tool video_brief</label>
+          <pre className="p-3 rounded-lg bg-dark-950 border border-dark-700 text-[11px] text-slate-300 overflow-x-auto whitespace-pre-wrap">
+            {JSON.stringify(brief, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      <div>
+        <label className={labelCls}>Ghi chú xuất bản — disclosure (affiliate / tài trợ / AI label / nguồn nhạc)</label>
+        <textarea className={inputCls} rows={3} value={publishNotes} onChange={(e) => setPublishNotes(e.target.value)} placeholder="VD: Có link affiliate VPBank → disclosure trong video. Voice AI → bật label AI TikTok." />
+      </div>
+
+      <button onClick={save} disabled={saving} className={btnPrimary}>
+        <Save className="w-4 h-4" /> {saving ? 'Đang lưu…' : savedTick ? 'Đã lưu ✓' : 'Lưu thay đổi'}
+      </button>
+    </div>
+  )
+}
+
+/* ─── Tab: Kịch bản ─── */
+
+function ScriptTab({ project, onSaved }: { project: VideoProjectDetail; onSaved: () => void }) {
+  const [script, setScript] = useState(project.script ?? '')
+  const [caption, setCaption] = useState(project.caption ?? '')
+  const [saving, setSaving] = useState(false)
+  const [savedTick, setSavedTick] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportWarnings, setExportWarnings] = useState<string[]>([])
+  const [exportError, setExportError] = useState('')
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await updateVideoProject(project.id, { script, caption })
+      onSaved()
+      setSavedTick(true)
+      setTimeout(() => setSavedTick(false), 2000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /** Đấu nối Director Studio: lưu kịch bản rồi xuất video brief chuẩn (.md). */
+  const exportBrief = async () => {
+    setExporting(true)
+    setExportError('')
+    setExportWarnings([])
+    try {
+      await updateVideoProject(project.id, { script, caption })
+      onSaved()
+      const { filename, markdown, warnings } = await getDirectorBrief(project.id)
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setExportWarnings(warnings ?? [])
+    } catch (e: any) {
+      setExportError(e?.message || 'Xuất brief thất bại.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="p-4 rounded-xl bg-brand-cyan/5 border border-brand-cyan/20 flex items-start gap-3">
+        <Sparkles className="w-5 h-5 text-brand-cyan shrink-0 mt-0.5" />
+        <p className="text-xs text-slate-300 leading-relaxed">
+          Nhờ agent (chế độ Agent trong{' '}
+          <Link href="/ai-chat" className="text-brand-cyan underline font-semibold">AI Chat Pro</Link>)
+          chạy <code className="text-brand-emerald">video_script</code> — tool tự chặn claim rủi ro cao
+          chưa xác minh và trả đúng 3 khối (Kịch bản / Caption / Lưu ý đăng bài). Dán kết quả vào 2 ô dưới rồi lưu.
+        </p>
+      </div>
+      <div>
+        <label className={labelCls}>Kịch bản quay/dựng (khối ## KỊCH BẢN QUAY)</label>
+        <textarea className={`${inputCls} font-mono`} rows={10} value={script} onChange={(e) => setScript(e.target.value)} placeholder="Phân cảnh, lời thoại/voice-over, text trên màn hình, thời lượng…" />
+      </div>
+      <div>
+        <label className={labelCls}>Caption đăng bài (khối ## CAPTION ĐĂNG BÀI)</label>
+        <textarea className={inputCls} rows={6} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="1 HOOK + 2–3 câu ngắn + 1 CTA (link trong bio) + 5–8 hashtag" />
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={save} disabled={saving} className={btnPrimary}>
+          <Save className="w-4 h-4" /> {saving ? 'Đang lưu…' : savedTick ? 'Đã lưu ✓' : 'Lưu kịch bản'}
+        </button>
+        <button onClick={exportBrief} disabled={exporting || saving} className={btnGhost} title="Mapping kịch bản sang video brief chuẩn Director Studio (.md) — import vào app Director Studio để chạy quy trình tiền kỳ 9 bước">
+          <Download className="w-4 h-4" /> {exporting ? 'Đang xuất…' : 'Xuất brief Director Studio'}
+        </button>
+      </div>
+      {exportError && (
+        <p className="text-xs text-red-400 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> {exportError}</p>
+      )}
+      {exportWarnings.length > 0 && (
+        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200/90 space-y-1">
+          <p className="font-semibold text-amber-300">Brief đã xuất — lưu ý khi import vào Director Studio:</p>
+          {exportWarnings.map((w, i) => <p key={i}>• {w}</p>)}
+        </div>
+      )}
+      <p className="text-[11px] text-slate-500 leading-relaxed">
+        File .md tải về đúng chuẩn brief 8 trường của Director Studio — mở app Director Studio → bước 1 (Brief) → import file để mapping toàn bộ kịch bản, claim ledger, hook và CTA vào dự án mới.
+      </p>
+    </div>
+  )
+}
+
+/* ─── Tab: Rights ledger ─── */
+
+const ASSET_TYPES: Record<string, string> = {
+  video: 'Video', image: 'Ảnh', music: 'Nhạc', voice: 'Giọng đọc',
+  font: 'Font', template: 'Template', screenshot: 'Screenshot', logo: 'Logo',
+}
+const RIGHTS_BASIS: Record<string, string> = {
+  original: 'Tự tạo (original)', license: 'Mua license', public_domain: 'Public domain',
+  permission: 'Xin phép văn bản', platform_library: 'Thư viện nền tảng', quotation_review: 'Trích dẫn đang review',
+}
+const ASSET_STATUS: Record<string, { label: string; cls: string }> = {
+  cleared: { label: 'Đã duyệt', cls: 'bg-brand-emerald/15 text-brand-emerald border-brand-emerald/30' },
+  conditional: { label: 'Có điều kiện', cls: 'bg-brand-amber/15 text-brand-amber border-brand-amber/30' },
+  pending: { label: 'Chờ duyệt', cls: 'bg-dark-700 text-slate-300 border-dark-600' },
+  reject: { label: 'Từ chối', cls: 'bg-red-500/15 text-red-300 border-red-500/30' },
+}
+
+function AssetsTab({ project, onChanged }: { project: VideoProjectDetail; onChanged: () => void }) {
+  const [name, setName] = useState('')
+  const [assetType, setAssetType] = useState('music')
+  const [rightsBasis, setRightsBasis] = useState('platform_library')
+  const [owner, setOwner] = useState('')
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [adding, setAdding] = useState(false)
+
+  const add = async () => {
+    if (!name.trim()) return
+    setAdding(true)
+    try {
+      await addVideoAsset(project.id, {
+        name: name.trim(), assetType, rightsBasis,
+        owner: owner.trim() || undefined, sourceUrl: sourceUrl.trim() || undefined,
+      })
+      setName(''); setOwner(''); setSourceUrl('')
+      onChanged()
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const cycleStatus = async (assetId: string, current: string) => {
+    const order = ['pending', 'conditional', 'cleared', 'reject']
+    const next = order[(order.indexOf(current) + 1) % order.length]
+    await setVideoAssetStatus(project.id, assetId, next)
+    onChanged()
+  }
+
+  const pendingCount = project.assets.filter((a) => a.status !== 'cleared').length
+
+  return (
+    <div className="space-y-4 max-w-4xl">
+      {pendingCount > 0 && (
+        <div className="p-3.5 rounded-xl bg-brand-amber/10 border border-brand-amber/30 flex items-start gap-2.5 text-xs text-amber-200">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          Còn {pendingCount} asset chưa cleared — <span className="font-bold">không được xuất bản</span> cho đến khi tất cả cleared.
+        </div>
+      )}
+
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <p className="text-xs font-bold text-white">Thêm asset vào rights ledger</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="col-span-2">
+            <label className={labelCls}>Tên asset *</label>
+            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: Nhạc nền — Audio Library track X" />
+          </div>
+          <div>
+            <label className={labelCls}>Loại</label>
+            <select className={inputCls} value={assetType} onChange={(e) => setAssetType(e.target.value)}>
+              {Object.entries(ASSET_TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Cơ sở quyền</label>
+            <select className={inputCls} value={rightsBasis} onChange={(e) => setRightsBasis(e.target.value)}>
+              {Object.entries(RIGHTS_BASIS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Chủ sở hữu</label>
+            <input className={inputCls} value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="VD: YouTube Audio Library" />
+          </div>
+          <div>
+            <label className={labelCls}>URL nguồn</label>
+            <input className={inputCls} value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://..." />
+          </div>
+        </div>
+        <button onClick={add} disabled={!name.trim() || adding} className={btnPrimary}>
+          <Plus className="w-4 h-4" /> {adding ? 'Đang thêm…' : 'Thêm asset'}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {project.assets.map((a) => {
+          const st = ASSET_STATUS[a.status] ?? ASSET_STATUS.pending
+          return (
+            <div key={a.id} className="p-3 rounded-xl bg-dark-900/60 border border-dark-700 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white truncate">{a.name}</p>
+                <p className="text-[11px] text-slate-500">
+                  {ASSET_TYPES[a.assetType] ?? a.assetType} · {RIGHTS_BASIS[a.rightsBasis] ?? a.rightsBasis}
+                  {a.owner ? ` · ${a.owner}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => cycleStatus(a.id, a.status)}
+                title="Bấm để đổi trạng thái"
+                className={`shrink-0 text-[11px] px-2.5 py-1 rounded-full border font-bold ${st.cls}`}
+              >
+                {st.label}
+              </button>
+              <button
+                onClick={async () => { await deleteVideoAsset(project.id, a.id); onChanged() }}
+                className="shrink-0 text-slate-500 hover:text-red-300"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )
+        })}
+        {project.assets.length === 0 && (
+          <p className="text-xs text-slate-500 text-center py-6">Chưa có asset nào. Thêm nhạc, hình, voice… kèm cơ sở quyền của từng cái.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ─── Tab: Claim ledger ─── */
+
+const CLAIM_TYPES: Record<string, string> = {
+  fact: 'Dữ kiện', interpretation: 'Diễn giải', forecast: 'Dự báo',
+  allegation: 'Cáo buộc', opinion: 'Ý kiến',
+}
+const RISK_LEVELS: Record<string, { label: string; cls: string }> = {
+  low: { label: 'Thấp', cls: 'text-slate-400' },
+  medium: { label: 'Trung bình', cls: 'text-brand-amber' },
+  high: { label: 'Cao', cls: 'text-orange-400' },
+  critical: { label: 'Nghiêm trọng', cls: 'text-red-300 font-bold' },
+}
+const CONFIDENCE: Record<string, string> = {
+  confirmed: 'Đã xác minh', probable: 'Khá chắc', disputed: 'Đang tranh cãi', unverified: 'Chưa xác minh',
+}
+
+function ClaimsTab({ project, onChanged }: { project: VideoProjectDetail; onChanged: () => void }) {
+  const [claimText, setClaimText] = useState('')
+  const [claimType, setClaimType] = useState('fact')
+  const [riskLevel, setRiskLevel] = useState('low')
+  const [confidence, setConfidence] = useState('unverified')
+  const [primarySource, setPrimarySource] = useState('')
+  const [evidenceExcerpt, setEvidenceExcerpt] = useState('')
+  const [sceneRef, setSceneRef] = useState('')
+  const [scriptCode, setScriptCode] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [check, setCheck] = useState<ClaimCheckResult | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  const add = async () => {
+    if (!claimText.trim()) return
+    setAdding(true)
+    try {
+      await addVideoClaim(project.id, {
+        claimText: claimText.trim(), claimType, riskLevel, confidence,
+        primarySource: primarySource.trim() || undefined,
+        evidenceExcerpt: evidenceExcerpt.trim() || undefined,
+        sceneRef: sceneRef.trim() || undefined,
+        scriptCode: scriptCode.trim() || undefined,
+      })
+      setClaimText(''); setPrimarySource(''); setEvidenceExcerpt('')
+      setSceneRef(''); setScriptCode(''); setConfidence('unverified')
+      setCheck(null)
+      onChanged()
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const doCheck = async () => {
+    setChecking(true)
+    try {
+      setCheck(await getVideoClaimCheck(project.id))
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const riskyOpen = project.claims.filter(
+    (c) => c.confidence === 'unverified' && ['high', 'critical'].includes(c.riskLevel) && c.status === 'open',
+  )
+
+  return (
+    <div className="space-y-4 max-w-4xl">
+      {riskyOpen.length > 0 && (
+        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start gap-2.5 text-xs text-red-200">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          {riskyOpen.length} claim rủi ro cao/nghiêm trọng chưa xác minh — phải xác minh hoặc gỡ/hạ wording trước khi xuất bản.
+        </div>
+      )}
+
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold text-white">Quét quy tắc ghi nhãn (playbook chương 06/07)</p>
+          <button onClick={doCheck} disabled={checking} className={btnGhost}>
+            <BadgeCheck className="w-3.5 h-3.5" /> {checking ? 'Đang quét…' : 'Quét claim-check'}
+          </button>
+        </div>
+        {check && (
+          <div className="space-y-2 text-xs">
+            {check.ok ? (
+              <p className="text-brand-emerald flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Đạt — không còn claim vi phạm quy tắc ghi nhãn ({check.total} claim đang mở).</p>
+            ) : (
+              <>
+                {check.mustMarkUnverified.map((i) => (
+                  <p key={i.id} className="p-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-200">⚠ {i.reason}</p>
+                ))}
+                {check.missingEvidence.map((i) => (
+                  <p key={i.id} className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200">⚠ {i.reason}</p>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <p className="text-xs font-bold text-white">Thêm claim vào claim ledger</p>
+        <div>
+          <label className={labelCls}>Nội dung claim * (nguyên văn trong kịch bản)</label>
+          <textarea className={inputCls} rows={2} value={claimText} onChange={(e) => setClaimText(e.target.value)} placeholder="VD: Vệ sinh lưới lọc giúp điều hòa tiết kiệm 15% điện" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div>
+            <label className={labelCls}>Loại</label>
+            <select className={inputCls} value={claimType} onChange={(e) => setClaimType(e.target.value)}>
+              {Object.entries(CLAIM_TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Mức rủi ro</label>
+            <select className={inputCls} value={riskLevel} onChange={(e) => setRiskLevel(e.target.value)}>
+              {Object.entries(RISK_LEVELS).map(([v, l]) => <option key={v} value={v}>{l.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Độ chắc chắn</label>
+            <select className={inputCls} value={confidence} onChange={(e) => setConfidence(e.target.value)}>
+              {Object.entries(CONFIDENCE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Nguồn chính</label>
+            <input className={inputCls} value={primarySource} onChange={(e) => setPrimarySource(e.target.value)} placeholder="URL / tên tài liệu" />
+          </div>
+        </div>
+        <div>
+          <label className={labelCls}>Đoạn căn cứ (trích dẫn từ nguồn hỗ trợ phát biểu)</label>
+          <textarea className={inputCls} rows={2} value={evidenceExcerpt} onChange={(e) => setEvidenceExcerpt(e.target.value)} placeholder="VD: Trọng số được học từ dữ liệu — MLCC Backpropagation" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Mã nguồn trong kịch bản</label>
+            <input className={inputCls} value={scriptCode} onChange={(e) => setScriptCode(e.target.value)} placeholder="VD: [C1]" />
+          </div>
+          <div>
+            <label className={labelCls}>Cảnh minh họa</label>
+            <input className={inputCls} value={sceneRef} onChange={(e) => setSceneRef(e.target.value)} placeholder="VD: 00:14–00:23" />
+          </div>
+        </div>
+        <button onClick={add} disabled={!claimText.trim() || adding} className={btnPrimary}>
+          <Plus className="w-4 h-4" /> {adding ? 'Đang thêm…' : 'Thêm claim'}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {project.claims.map((c) => (
+          <div key={c.id} className="p-3 rounded-xl bg-dark-900/60 border border-dark-700 flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-slate-200">
+                {c.scriptCode && <span className="mr-2 px-1.5 py-0.5 rounded bg-brand-emerald/15 text-brand-emerald text-[11px] font-mono">{c.scriptCode}</span>}
+                {c.claimText}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {CLAIM_TYPES[c.claimType] ?? c.claimType} ·{' '}
+                <span className={RISK_LEVELS[c.riskLevel]?.cls}>{RISK_LEVELS[c.riskLevel]?.label}</span> ·{' '}
+                {CONFIDENCE[c.confidence] ?? c.confidence} · {c.status === 'open' ? 'đang mở' : c.status === 'corrected' ? 'đã sửa' : 'đã gỡ'}
+                {c.primarySource ? ` · Nguồn: ${c.primarySource}` : ''}
+                {c.sceneRef ? ` · Cảnh: ${c.sceneRef}` : ''}
+              </p>
+              {c.evidenceExcerpt && (
+                <p className="text-[11px] text-slate-400 mt-1 italic border-l-2 border-dark-600 pl-2">“{c.evidenceExcerpt}”</p>
+              )}
+            </div>
+            <select
+              value={c.status}
+              onChange={async (e) => { await setVideoClaimStatus(project.id, c.id, e.target.value); onChanged() }}
+              className="shrink-0 text-[11px] px-2 py-1 rounded-lg bg-dark-800 border border-dark-700 text-slate-300"
+            >
+              <option value="open">Đang mở</option>
+              <option value="corrected">Đã sửa</option>
+              <option value="withdrawn">Đã gỡ</option>
+            </select>
+            <button
+              onClick={async () => { await deleteVideoClaim(project.id, c.id); onChanged() }}
+              className="shrink-0 text-slate-500 hover:text-red-300"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+        {project.claims.length === 0 && (
+          <p className="text-xs text-slate-500 text-center py-6">Chưa có claim nào. Mỗi câu có thể kiểm chứng trong kịch bản nên có một dòng ở đây.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ─── Tab: AI Register ─── */
+
+const AI_CATEGORIES: Record<string, string> = {
+  A0: 'A0 — Không dùng AI',
+  A1: 'A1 — AI hỗ trợ (brainstorm, sửa lỗi)',
+  A2: 'A2 — AI tạo hình minh họa hư cấu rõ ràng',
+  A3: 'A3 — AI tạo/sửa giọng, mặt, sự kiện chân thực',
+  A4: 'A4 — Mô phỏng người thật (cần consent)',
+}
+
+function AiRegisterTab({ project, onChanged }: { project: VideoProjectDetail; onChanged: () => void }) {
+  const [assetName, setAssetName] = useState('')
+  const [tool, setTool] = useState('')
+  const [category, setCategory] = useState('A1')
+  const [realPerson, setRealPerson] = useState(false)
+  const [consentStatus, setConsentStatus] = useState('na')
+  const [adding, setAdding] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const add = async () => {
+    if (!assetName.trim() || !tool.trim()) return
+    setAdding(true)
+    setErr(null)
+    try {
+      await addVideoAiEntry(project.id, {
+        assetName: assetName.trim(), tool: tool.trim(), category, realPerson, consentStatus,
+      })
+      setAssetName(''); setTool(''); setRealPerson(false)
+      onChanged()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Lỗi thêm mục AI')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const needLabel = project.aiEntries.filter((e) => e.labelRequired && !e.labelApplied)
+
+  return (
+    <div className="space-y-4 max-w-4xl">
+      {needLabel.length > 0 && (
+        <div className="p-3.5 rounded-xl bg-brand-amber/10 border border-brand-amber/30 flex items-start gap-2.5 text-xs text-amber-200">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          {needLabel.length} mục AI chân thực (A3/A4) chưa bật label — bắt buộc bật disclosure của nền tảng trước khi đăng.
+        </div>
+      )}
+
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <p className="text-xs font-bold text-white">Thêm mục AI register</p>
+        {err && <p className="text-xs text-red-300">{err}</p>}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div>
+            <label className={labelCls}>Asset dùng AI *</label>
+            <input className={inputCls} value={assetName} onChange={(e) => setAssetName(e.target.value)} placeholder="VD: Voice-over tập 1" />
+          </div>
+          <div>
+            <label className={labelCls}>Công cụ *</label>
+            <input className={inputCls} value={tool} onChange={(e) => setTool(e.target.value)} placeholder="VD: Agent Kiemtien2026, TTS…" />
+          </div>
+          <div>
+            <label className={labelCls}>Phân loại</label>
+            <select className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)}>
+              {Object.entries(AI_CATEGORIES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={realPerson} onChange={(e) => setRealPerson(e.target.checked)} className="accent-brand-emerald" />
+            Liên quan người thật
+          </label>
+          <div>
+            <label className={labelCls}>Consent</label>
+            <select className={inputCls} value={consentStatus} onChange={(e) => setConsentStatus(e.target.value)}>
+              <option value="na">Không áp dụng</option>
+              <option value="obtained">Đã có văn bản</option>
+              <option value="none">Chưa có</option>
+            </select>
+          </div>
+        </div>
+        <button onClick={add} disabled={!assetName.trim() || !tool.trim() || adding} className={btnPrimary}>
+          <Plus className="w-4 h-4" /> {adding ? 'Đang thêm…' : 'Thêm mục'}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {project.aiEntries.map((e) => (
+          <div key={e.id} className="p-3 rounded-xl bg-dark-900/60 border border-dark-700 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate">{e.assetName}</p>
+              <p className="text-[11px] text-slate-500">
+                {e.tool} · {AI_CATEGORIES[e.category] ?? e.category}
+                {e.realPerson ? ' · người thật' : ''}
+                {e.consentStatus && e.consentStatus !== 'na' ? ` · consent: ${e.consentStatus}` : ''}
+              </p>
+            </div>
+            {e.labelRequired && (
+              <button
+                onClick={async () => { await setVideoAiLabel(project.id, e.id, !e.labelApplied); onChanged() }}
+                className={`shrink-0 text-[11px] px-2.5 py-1 rounded-full border font-bold ${
+                  e.labelApplied
+                    ? 'bg-brand-emerald/15 text-brand-emerald border-brand-emerald/30'
+                    : 'bg-brand-amber/15 text-brand-amber border-brand-amber/30'
+                }`}
+              >
+                {e.labelApplied ? 'Đã label ✓' : 'Chưa label'}
+              </button>
+            )}
+            <button
+              onClick={async () => { await deleteVideoAiEntry(project.id, e.id); onChanged() }}
+              className="shrink-0 text-slate-500 hover:text-red-300"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+        {project.aiEntries.length === 0 && (
+          <p className="text-xs text-slate-500 text-center py-6">Chưa có mục AI nào.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ─── Checklist tuân thủ xuất bản (playbook chương 09) ─── */
+
+const MUSIC_RIGHTS_LABELS: Record<string, string> = {
+  cml: 'Nhạc trong Commercial Music Library (khuyến nghị cho nội dung thương mại)',
+  licensed: 'Đã có license / mua bản quyền',
+  original: 'Nhạc tự làm / beat của mình',
+  unknown: 'Chưa xác định — CẦN XÁC MINH',
+}
+
+function ComplianceSection({ projectId, onChanged }: { projectId: string; onChanged: () => void }) {
+  const [state, setState] = useState<ComplianceState | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [aiLabelRequired, setAiLabelRequired] = useState(false)
+  const [aiLabelApplied, setAiLabelApplied] = useState(false)
+  const [commercialRequired, setCommercialRequired] = useState(false)
+  const [commercialApplied, setCommercialApplied] = useState(false)
+  const [musicRights, setMusicRights] = useState('unknown')
+  const [musicNote, setMusicNote] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    getVideoCompliance(projectId).then((s) => {
+      setState(s)
+      if (s) {
+        setAiLabelRequired(s.aiLabelRequired)
+        setAiLabelApplied(s.aiLabelApplied)
+        setCommercialRequired(s.commercialDisclosureRequired)
+        setCommercialApplied(s.commercialDisclosureApplied)
+        setMusicRights(s.musicRights)
+        setMusicNote(s.musicNote ?? '')
+      }
+      setLoaded(true)
+    })
+  }, [projectId])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const s = await setVideoCompliance(projectId, {
+        aiLabelRequired, aiLabelApplied,
+        commercialDisclosureRequired: commercialRequired,
+        commercialDisclosureApplied: commercialApplied,
+        musicRights, musicNote: musicNote.trim() || undefined,
+      })
+      setState(s)
+      onChanged()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!loaded) return null
+
+  return (
+    <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+      <p className="text-xs font-bold text-white flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-brand-amber" />
+        Checklist tuân thủ xuất bản
+        {state && <span className="text-[10px] font-normal text-slate-500">(đã khai báo)</span>}
+      </p>
+      <div className="space-y-2 text-xs">
+        <label className="flex items-center gap-2 text-slate-300">
+          <input type="checkbox" checked={aiLabelRequired} onChange={(e) => setAiLabelRequired(e.target.checked)} className="accent-brand-amber" />
+          Video có hình/âm thanh AI chân thực → <b>bắt buộc gắn nhãn AI</b> khi đăng
+        </label>
+        {aiLabelRequired && (
+          <label className="flex items-center gap-2 text-slate-400 ml-6">
+            <input type="checkbox" checked={aiLabelApplied} onChange={(e) => setAiLabelApplied(e.target.checked)} className="accent-brand-emerald" />
+            Đã bật nhãn "nội dung do AI tạo" khi đăng
+          </label>
+        )}
+        <label className="flex items-center gap-2 text-slate-300">
+          <input type="checkbox" checked={commercialRequired} onChange={(e) => setCommercialRequired(e.target.checked)} className="accent-brand-amber" />
+          Nội dung quảng bá thương hiệu/sản phẩm/dịch vụ → <b>khai báo thương mại</b>
+        </label>
+        {commercialRequired && (
+          <label className="flex items-center gap-2 text-slate-400 ml-6">
+            <input type="checkbox" checked={commercialApplied} onChange={(e) => setCommercialApplied(e.target.checked)} className="accent-brand-emerald" />
+            Đã khai báo nội dung thương mại
+          </label>
+        )}
+        <div>
+          <label className={labelCls}>Quyền sử dụng nhạc</label>
+          <select className={inputCls} value={musicRights} onChange={(e) => setMusicRights(e.target.value)}>
+            {Object.entries(MUSIC_RIGHTS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Ghi chú nhạc (tên beat, nguồn license…)</label>
+          <input className={inputCls} value={musicNote} onChange={(e) => setMusicNote(e.target.value)} placeholder="VD: beat mariage-damour (tự upload), nhạc CML TikTok" />
+        </div>
+      </div>
+      <button onClick={save} disabled={saving} className={btnPrimary}>
+        <Save className="w-4 h-4" /> {saving ? 'Đang lưu…' : 'Lưu checklist'}
+      </button>
+      {!state && (
+        <p className="text-[11px] text-amber-200/80">Chưa khai báo — hệ thống sẽ chặn gửi sang Content Studio cho đến khi checklist được điền.</p>
+      )}
+    </div>
+  )
+}
+
+/* ─── Tab: Kinh tế video (playbook chương 04/05) ─── */
+
+const fmtVND = (n: number | null | undefined) =>
+  n === null || n === undefined ? '—' : n.toLocaleString('vi-VN') + ' đ'
+const fmtNum = (n: number | null | undefined, digits = 2) =>
+  n === null || n === undefined ? '—' : n.toLocaleString('vi-VN', { maximumFractionDigits: digits })
+
+function EconomicsTab({ project }: { project: VideoProjectDetail }) {
+  const [models, setModels] = useState<MonetizationModel[]>([])
+  const [offers, setOffers] = useState<MonetizationOffer[]>([])
+  const [summary, setSummary] = useState<EconomicsSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // Form đề nghị mua
+  const [offerModel, setOfferModel] = useState('tiktok_shop_affiliate')
+  const [offerTitle, setOfferTitle] = useState('')
+  const [offerCommission, setOfferCommission] = useState('')
+  const [offerVerified, setOfferVerified] = useState(false)
+  const [addingOffer, setAddingOffer] = useState(false)
+
+  // Form số liệu
+  const [f, setF] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [m, o, s] = await Promise.all([
+        getMmoModels(),
+        listMmoOffers(project.id),
+        getEconomicsSummary(project.id),
+      ])
+      setModels(m); setOffers(o); setSummary(s)
+      const e = s.economics
+      if (e) {
+        setF({
+          costCash: String(e.costCash), hoursWorked: String(e.hoursWorked),
+          views: String(e.views), clicks: String(e.clicks), orders: String(e.orders),
+          eligibleOrders: String(e.eligibleOrders), commissionReceived: String(e.commissionReceived),
+          saves: String(e.saves), shares: String(e.shares),
+          completionRate: e.completionRate !== null ? String(e.completionRate) : '',
+          utm: e.utm ?? '', note: e.note ?? '',
+        })
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [project.id])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const addOffer = async () => {
+    if (!offerTitle.trim()) return
+    setAddingOffer(true)
+    try {
+      await createMmoOffer({
+        projectId: project.id,
+        model: offerModel,
+        title: offerTitle.trim(),
+        commissionAmount: offerCommission ? parseInt(offerCommission, 10) : undefined,
+        verified: offerVerified,
+      })
+      setOfferTitle(''); setOfferCommission(''); setOfferVerified(false)
+      refresh()
+    } finally {
+      setAddingOffer(false)
+    }
+  }
+
+  const saveEconomics = async () => {
+    setSaving(true)
+    try {
+      const num = (k: string) => (f[k] === '' || f[k] === undefined ? undefined : parseFloat(f[k]))
+      const int = (k: string) => {
+        const v = num(k)
+        return v === undefined || Number.isNaN(v) ? undefined : Math.round(v)
+      }
+      await upsertVideoEconomics(project.id, {
+        costCash: int('costCash'), hoursWorked: num('hoursWorked'),
+        views: int('views'), clicks: int('clicks'), orders: int('orders'),
+        eligibleOrders: int('eligibleOrders'), commissionReceived: int('commissionReceived'),
+        saves: int('saves'), shares: int('shares'),
+        completionRate: f.completionRate === '' ? null : num('completionRate'),
+        utm: f.utm?.trim() || null, note: f.note?.trim() || null,
+      })
+      refresh()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const set = (k: string) => (e: ChangeEvent<HTMLInputElement>) =>
+    setF({ ...f, [k]: e.target.value })
+
+  if (loading) return <p className="text-xs text-slate-500">Đang tải số liệu…</p>
+
+  const s = summary?.summary
+
+  return (
+    <div className="space-y-4 max-w-4xl">
+      {/* KPI gắn với tiền */}
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700">
+        <p className="text-xs font-bold text-white flex items-center gap-2 mb-3">
+          <Coins className="w-4 h-4 text-brand-emerald" /> Hiệu quả — tiền thật từ sổ quyết toán
+        </p>
+        {!summary?.hasData ? (
+          <p className="text-xs text-slate-500">Chưa có số liệu. Nhập chi phí và kết quả bên dưới — lượt view/follow chỉ là chỉ số phân phối, không dùng để suy ra tiền.</p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 rounded-lg bg-dark-950/60 border border-dark-800">
+              <p className="text-slate-500">Phần dư (sau chi phí)</p>
+              <p className={`text-base font-bold mt-1 ${(s?.profit ?? 0) >= 0 ? 'text-brand-emerald' : 'text-red-300'}`}>{fmtVND(s?.profit)}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-dark-950/60 border border-dark-800">
+              <p className="text-slate-500">Tiền / 1.000 view</p>
+              <p className="text-base font-bold mt-1 text-slate-200">{fmtVND(s?.revenuePer1kViews)}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-dark-950/60 border border-dark-800">
+              <p className="text-slate-500">Chi phí / đơn hợp lệ</p>
+              <p className="text-base font-bold mt-1 text-slate-200">{fmtVND(s?.costPerEligibleOrder)}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-dark-950/60 border border-dark-800">
+              <p className="text-slate-500">Giờ vận hành / đơn</p>
+              <p className="text-base font-bold mt-1 text-slate-200">{fmtNum(s?.hoursPerOrder)} giờ</p>
+            </div>
+            <div className="p-3 rounded-lg bg-dark-950/60 border border-dark-800">
+              <p className="text-slate-500">Điểm hòa vốn</p>
+              <p className="text-base font-bold mt-1 text-slate-200">
+                {summary?.breakevenOrders !== null && summary?.breakevenOrders !== undefined
+                  ? `${summary.breakevenOrders} đơn hợp lệ` : '—'}
+              </p>
+              {summary?.offer && <p className="text-[10px] text-slate-500 mt-0.5">{summary.offer.title} · {fmtVND(summary.offer.commissionAmount)}/đơn{summary.offer.verified ? ' · đã xác minh' : ''}</p>}
+            </div>
+            <div className="p-3 rounded-lg bg-dark-950/60 border border-dark-800">
+              <p className="text-slate-500">CTR / Đặt đơn / Đủ ĐK</p>
+              <p className="text-base font-bold mt-1 text-slate-200">
+                {fmtNum(s?.clickThroughRate !== null && s?.clickThroughRate !== undefined ? s.clickThroughRate * 100 : null, 1)}%
+                {' / '}{fmtNum(s?.orderRateAfterClick !== null && s?.orderRateAfterClick !== undefined ? s.orderRateAfterClick * 100 : null, 1)}%
+                {' / '}{fmtNum(s?.eligibleRate !== null && s?.eligibleRate !== undefined ? s.eligibleRate * 100 : null, 1)}%
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Đề nghị mua */}
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <p className="text-xs font-bold text-white">Đề nghị mua — chọn cơ chế thu nhập TRƯỚC khi sản xuất</p>
+        <div className="space-y-2">
+          {offers.map((o) => (
+            <div key={o.id} className="p-2.5 rounded-lg bg-dark-950/60 border border-dark-800 flex items-start gap-3 text-xs">
+              <div className="flex-1">
+                <p className="text-slate-200 font-semibold">{o.title}</p>
+                <p className="text-slate-500 mt-0.5">
+                  {models.find((m) => m.id === o.model)?.label ?? o.model}
+                  {o.commissionAmount ? ` · ${fmtVND(o.commissionAmount)}/đơn` : ''}
+                  {o.verified ? ' · ✓ đã xác minh' : ' · chưa xác minh'}
+                  {' · '}{o.status}
+                </p>
+              </div>
+              <button
+                onClick={async () => { await updateMmoOffer(o.id, { verified: !o.verified }); refresh() }}
+                className="shrink-0 text-[11px] px-2 py-1 rounded-lg bg-dark-800 border border-dark-700 text-slate-300 hover:border-brand-emerald/50"
+              >
+                {o.verified ? 'Bỏ xác minh' : 'Xác minh'}
+              </button>
+              <button onClick={async () => { await deleteMmoOffer(o.id); refresh() }} className="shrink-0 text-slate-500 hover:text-red-300">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          {offers.length === 0 && <p className="text-xs text-slate-500">Chưa có đề nghị mua nào.</p>}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="md:col-span-2">
+            <label className={labelCls}>Cơ chế thu nhập</label>
+            <select className={inputCls} value={offerModel} onChange={(e) => setOfferModel(e.target.value)}>
+              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Tên đề nghị mua *</label>
+            <input className={inputCls} value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} placeholder="VD: Bộ mẫu kiểm kho Excel" />
+          </div>
+          <div>
+            <label className={labelCls}>Hoa hồng/đơn (đ)</label>
+            <input className={inputCls} inputMode="numeric" value={offerCommission} onChange={(e) => setOfferCommission(e.target.value)} placeholder="VD: 40000" />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-slate-300">
+          <input type="checkbox" checked={offerVerified} onChange={(e) => setOfferVerified(e.target.checked)} className="accent-brand-emerald" />
+          Đã xác minh: chương trình đang mở, quốc gia nhận tiền, kỳ quyết toán
+        </label>
+        <button onClick={addOffer} disabled={!offerTitle.trim() || addingOffer} className={btnPrimary}>
+          <Plus className="w-4 h-4" /> {addingOffer ? 'Đang thêm…' : 'Thêm đề nghị mua'}
+        </button>
+      </div>
+
+      {/* Số liệu */}
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <p className="text-xs font-bold text-white">Số liệu video — nhập từ dashboard & sổ quyết toán</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            ['costCash', 'Chi phí tiền mặt (đ)'], ['hoursWorked', 'Giờ vận hành'],
+            ['views', 'Lượt xem'], ['clicks', 'Nhấp liên kết'],
+            ['orders', 'Đơn đặt'], ['eligibleOrders', 'Đơn đủ điều kiện'],
+            ['commissionReceived', 'Hoa hồng thực nhận (đ)'], ['saves', 'Lượt lưu'],
+            ['shares', 'Lượt chia sẻ'], ['completionRate', 'Tỷ lệ xem hết (0–1)'],
+          ].map(([k, label]) => (
+            <div key={k}>
+              <label className={labelCls}>{label}</label>
+              <input className={inputCls} inputMode="decimal" value={f[k] ?? ''} onChange={set(k)} />
+            </div>
+          ))}
+          <div className="md:col-span-2">
+            <label className={labelCls}>UTM campaign</label>
+            <input className={inputCls} value={f.utm ?? ''} onChange={set('utm')} placeholder="VD: excel-kho-t11" />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Ghi chú</label>
+            <input className={inputCls} value={f.note ?? ''} onChange={set('note')} />
+          </div>
+        </div>
+        <button onClick={saveEconomics} disabled={saving} className={btnPrimary}>
+          <Save className="w-4 h-4" /> {saving ? 'Đang lưu…' : 'Lưu số liệu'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ─── Tab: QA & Risk ─── */
+
+const RISK_FIELDS = [
+  { key: 'c', label: 'C — Copyright & license' },
+  { key: 'p', label: 'P — Privacy, likeness, voice' },
+  { key: 'l', label: 'L — Legal / reputation' },
+  { key: 'a', label: 'A — Accuracy & misinformation' },
+  { key: 'm', label: 'M — Monetization / platform policy' },
+  { key: 'h', label: 'H — Harm (health, safety, finance)' },
+] as const
+
+function QaRiskTab({ project, onChanged }: { project: VideoProjectDetail; onChanged: () => void }) {
+  const [gates, setGates] = useState<Record<string, GateState>>(() => {
+    try {
+      return project.gatesJson ? JSON.parse(project.gatesJson) : {}
+    } catch {
+      return {}
+    }
+  })
+  const [savingGates, setSavingGates] = useState(false)
+
+  const [risk, setRisk] = useState<Record<string, number>>(() => {
+    try {
+      return project.riskBreakdown ? JSON.parse(project.riskBreakdown) : { c: 0, p: 0, l: 0, a: 0, m: 0, h: 0 }
+    } catch {
+      return { c: 0, p: 0, l: 0, a: 0, m: 0, h: 0 }
+    }
+  })
+  const [a4NoConsent, setA4NoConsent] = useState(false)
+  const [criticalUnverified, setCriticalUnverified] = useState(false)
+  const [riskResult, setRiskResult] = useState<RiskResult | null>(null)
+  const [scoring, setScoring] = useState(false)
+
+  const [readiness, setReadiness] = useState<PublishReadiness | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sendMsg, setSendMsg] = useState<string | null>(null)
+
+  const saveGates = async () => {
+    setSavingGates(true)
+    try {
+      await updateVideoGates(project.id, gates)
+      onChanged()
+    } finally {
+      setSavingGates(false)
+    }
+  }
+
+  const doScore = async () => {
+    setScoring(true)
+    try {
+      const res = await scoreVideoRisk(project.id, {
+        c: risk.c, p: risk.p, l: risk.l, a: risk.a, m: risk.m, h: risk.h,
+        a4NoConsent, criticalHealthClaimUnverified: criticalUnverified,
+      })
+      setRiskResult(res)
+      onChanged()
+    } finally {
+      setScoring(false)
+    }
+  }
+
+  const doCheck = async () => {
+    setChecking(true)
+    try {
+      setReadiness(await getVideoReadiness(project.id))
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const doSend = async () => {
+    setSending(true)
+    setSendMsg(null)
+    try {
+      const res = await sendVideoToContentStudio(project.id)
+      setSendMsg(`Đã tạo bản nháp trong Content Studio ✓`)
+      onChanged()
+    } catch (e) {
+      setSendMsg(e instanceof Error ? e.message : 'Gửi thất bại')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const gatesPassed = Object.keys(GATE_LABELS).filter((g) => gates[g]?.pass).length
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+      {/* 8 cổng QA */}
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold text-white flex items-center gap-2">
+            <ClipboardCheck className="w-4 h-4 text-brand-emerald" />
+            8 cổng QA — {gatesPassed}/8 pass
+          </p>
+          <button onClick={saveGates} disabled={savingGates} className={btnGhost}>
+            <Save className="w-3.5 h-3.5" /> {savingGates ? 'Đang lưu…' : 'Lưu gates'}
+          </button>
+        </div>
+        <div className="space-y-2">
+          {Object.entries(GATE_LABELS).map(([gid, label]) => (
+            <div key={gid} className="flex items-start gap-3 p-2.5 rounded-lg bg-dark-950/60 border border-dark-800">
+              <button
+                onClick={() => setGates({ ...gates, [gid]: { ...gates[gid], pass: !gates[gid]?.pass } })}
+                className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-all ${
+                  gates[gid]?.pass
+                    ? 'bg-brand-emerald border-brand-emerald text-dark-950'
+                    : 'border-dark-600 text-transparent hover:border-brand-emerald/50'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4" />
+              </button>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-slate-200">
+                  <span className="text-brand-cyan font-bold mr-1.5">{gid}</span>
+                  {label}
+                </p>
+                <input
+                  className="mt-1.5 w-full px-2.5 py-1.5 rounded-lg bg-dark-900 border border-dark-800 text-[11px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-brand-emerald/50"
+                  value={gates[gid]?.note ?? ''}
+                  onChange={(e) => setGates({ ...gates, [gid]: { pass: !!gates[gid]?.pass, note: e.target.value } })}
+                  placeholder="Ghi chú (không bắt buộc)…"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Risk score */}
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <p className="text-xs font-bold text-white flex items-center gap-2">
+          <Gauge className="w-4 h-4 text-brand-amber" />
+          Risk score — R = C + P + L + A + M + H (mỗi yếu tố 0–3)
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {RISK_FIELDS.map((f) => (
+            <div key={f.key}>
+              <label className={labelCls}>{f.label}</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range" min={0} max={3} step={1}
+                  value={risk[f.key] ?? 0}
+                  onChange={(e) => setRisk({ ...risk, [f.key]: Number(e.target.value) })}
+                  className="flex-1 accent-brand-amber"
+                />
+                <span className="text-sm font-bold text-white w-5 text-center">{risk[f.key] ?? 0}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-1.5">
+          <label className="flex items-center gap-2 text-xs text-red-300">
+            <input type="checkbox" checked={a4NoConsent} onChange={(e) => setA4NoConsent(e.target.checked)} className="accent-red-500" />
+            Veto: mô phỏng người thật (A4) nhưng KHÔNG có consent văn bản → REJECT ngay
+          </label>
+          <label className="flex items-center gap-2 text-xs text-red-300">
+            <input type="checkbox" checked={criticalUnverified} onChange={(e) => setCriticalUnverified(e.target.checked)} className="accent-red-500" />
+            Veto: claim sức khỏe/tài chính mức critical chưa xác minh → REJECT ngay
+          </label>
+        </div>
+        <button onClick={doScore} disabled={scoring} className={btnPrimary}>
+          <Gauge className="w-4 h-4" /> {scoring ? 'Đang chấm…' : 'Chấm điểm rủi ro'}
+        </button>
+        {riskResult && (
+          <div className={`p-3.5 rounded-xl border text-xs leading-relaxed ${
+            riskResult.veto || riskResult.score >= 8
+              ? 'bg-red-500/10 border-red-500/30 text-red-200'
+              : riskResult.score >= 4
+                ? 'bg-brand-amber/10 border-brand-amber/30 text-amber-200'
+                : 'bg-brand-emerald/10 border-brand-emerald/30 text-emerald-200'
+          }`}>
+            <p className="font-bold text-sm">
+              {riskResult.veto ? '⛔ VETO' : `Risk score: ${riskResult.score}/18`}
+            </p>
+            <p className="mt-1">{riskResult.decision}</p>
+            <p className="mt-1 opacity-70">
+              (C{riskResult.breakdown.c} P{riskResult.breakdown.p} L{riskResult.breakdown.l} A{riskResult.breakdown.a} M{riskResult.breakdown.m} H{riskResult.breakdown.h})
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Checklist tuân thủ xuất bản (playbook chương 09) */}
+      <ComplianceSection projectId={project.id} onChanged={onChanged} />
+
+      {/* Xuất bản */}
+      <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700 space-y-3">
+        <p className="text-xs font-bold text-white flex items-center gap-2">
+          <Send className="w-4 h-4 text-brand-cyan" />
+          Xuất bản — gửi sang Content Studio
+        </p>
+        <p className="text-[11px] text-slate-500">
+          Hệ thống chặn nếu còn asset chưa cleared, claim rủi ro cao chưa xác minh, hoặc chưa khai báo checklist tuân thủ (nhãn AI, khai báo thương mại, quyền nhạc).
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={doCheck} disabled={checking} className={btnGhost}>
+            {checking ? 'Đang kiểm tra…' : 'Kiểm tra điều kiện xuất bản'}
+          </button>
+          <button onClick={doSend} disabled={sending || !!project.contentItemId} className={btnPrimary}>
+            <Send className="w-4 h-4" />
+            {project.contentItemId ? 'Đã gửi sang Content Studio ✓' : sending ? 'Đang gửi…' : 'Gửi sang Content Studio'}
+          </button>
+        </div>
+        {readiness && (
+          <div className={`p-3 rounded-xl border text-xs ${
+            readiness.ready
+              ? 'bg-brand-emerald/10 border-brand-emerald/30 text-emerald-200'
+              : 'bg-brand-amber/10 border-brand-amber/30 text-amber-200'
+          }`}>
+            {readiness.ready ? (
+              <p className="font-bold">✓ Đủ điều kiện xuất bản — có thể gửi sang Content Studio.</p>
+            ) : (
+              <div className="space-y-1">
+                <p className="font-bold">Chưa đủ điều kiện:</p>
+                {readiness.blockingAssets.map((a) => (
+                  <p key={a.id}>• Asset "{a.name}" — {ASSET_STATUS[a.status]?.label ?? a.status}</p>
+                ))}
+                {readiness.riskyClaims.map((c) => (
+                  <p key={c.id}>• Claim chưa xác minh: "{c.claimText}…"</p>
+                ))}
+                {(readiness.complianceBlockers ?? []).map((b, i) => (
+                  <p key={`cb-${i}`}>• Tuân thủ: {b}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {sendMsg && <p className="text-xs text-slate-300">{sendMsg}</p>}
+        {project.contentItemId && (
+          <Link href="/content" className="inline-flex items-center gap-1.5 text-xs text-brand-cyan underline">
+            <Link2 className="w-3.5 h-3.5" /> Mở Content Studio để duyệt & publish
+          </Link>
+        )}
+      </div>
+    </div>
+  )
+}

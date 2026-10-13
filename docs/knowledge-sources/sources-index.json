@@ -1,0 +1,902 @@
+[
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[01]",
+  "name": "But what is a Neural Network",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "3Blue1Brown",
+  "year": "",
+  "url": "https://www.3blue1brown.com",
+  "note": "Video và minh họa về nơ-ron, trọng số, tầng mạng và nhận dạng chữ số. Điểm bắt đầu để hình dung cấu trúc mạng."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[02]",
+  "name": "Machine Learning Crash Course",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "Google",
+  "year": "",
+  "url": "https://developers.google.com",
+  "note": "Hồi quy, phân loại, dữ liệu, overfitting, mạng nơ-ron, embeddings và hệ thống ML. Có bài tập và hình minh họa tương tác."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[03]",
+  "name": "Mathematics for Machine Learning",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "Deisenroth, Faisal, Ong",
+  "year": "",
+  "url": "https://mml-book.github.io",
+  "note": "Sách toán nền tảng: đại số tuyến tính, giải tích vector, xác suất và tối ưu. Tác giả cung cấp PDF trên trang sách."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[04]",
+  "name": "Dive into Deep Learning",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "Nhóm tác giả D2L",
+  "year": "",
+  "url": "https://d2l.ai",
+  "note": "Sách kết hợp công thức và mã nguồn: MLP, CNN, RNN, attention, tối ưu và ứng dụng. Dùng mục lục để tra cứu theo chủ đề."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[05]",
+  "name": "Neural Networks and Deep Learning",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "Michael Nielsen",
+  "year": "",
+  "url": "https://neuralnetworksanddeeplearning.com",
+  "note": "Sách trực tuyến tập trung vào mạng nơ-ron và backpropagation. Đọc chậm để hiểu toán; ví dụ mã thuộc thế hệ cũ."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[06]",
+  "name": "Understanding Deep Learning",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "Simon J. D. Prince",
+  "year": "",
+  "url": "https://udlbook.github.io",
+  "note": "Sách học sâu kèm tài nguyên giảng dạy; kho github.com/udlbook/udlbook có notebooks, slides, bài tập."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[07]",
+  "name": "Deep Learning",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "Goodfellow, Bengio, Courville",
+  "year": "",
+  "url": "https://www.deeplearningbook.org",
+  "note": "Sách tham khảo về toán, mô hình, tối ưu, regularization và nghiên cứu. Bản 2016 — đọc cùng nguồn riêng về Transformer và diffusion."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[08]",
+  "name": "Bài về Multilayer Perceptron",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "Machine Learning cơ bản",
+  "year": "",
+  "url": "https://machinelearningcoban.com",
+  "note": "Giải thích MLP, hàm XOR và backpropagation bằng tiếng Việt. Dùng để đối chiếu thuật ngữ với tài liệu tiếng Anh."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[09]",
+  "name": "Đắm mình vào Học Sâu",
+  "section": "7.1. Nguồn nền tảng và tài liệu tiếng Việt `[01]`–`[09]`",
+  "author": "Nhóm dịch AIVIVN",
+  "year": "",
+  "url": "https://d2l.aivivn.com",
+  "note": "Bản dịch cộng đồng của D2L (phiên bản 0.14.4, nền tảng MXNet); khi chạy bài tập cần đối chiếu mã ở nguồn gốc."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[10]",
+  "name": "Deep Learning Specialization",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "DeepLearning.AI, Andrew Ng",
+  "year": "",
+  "url": "https://www.deeplearning.ai",
+  "note": "Chuỗi 5 khóa: mạng nơ-ron, cải thiện huấn luyện, tổ chức dự án, CNN, mô hình chuỗi."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[11]",
+  "name": "Introduction to Deep Learning 6.S191",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "MIT",
+  "year": "",
+  "url": "https://introtodeeplearning.com",
+  "note": "Nhập môn học sâu + thực hành: thị giác, ngôn ngữ, mô hình sinh. Cần nền tảng đạo hàm và nhân ma trận."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[12]",
+  "name": "Practical Deep Learning for Coders",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "fast.ai",
+  "year": "",
+  "url": "https://course.fast.ai",
+  "note": "Hướng thực hành: ảnh, dữ liệu bảng, NLP, triển khai. Dành cho người đã lập trình được."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[13]",
+  "name": "Neural Networks: Zero to Hero",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "Andrej Karpathy",
+  "year": "",
+  "url": "https://karpathy.ai",
+  "note": "Xây mạng từ mã nguồn: micrograd, backpropagation, MLP, mô hình ngôn ngữ. Cần Python và toán nhập môn."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[14]",
+  "name": "CS231n — Deep Learning for Computer Vision",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "Stanford",
+  "year": "",
+  "url": "https://cs231n.stanford.edu",
+  "note": "Thị giác máy tính, kiến trúc mạng, huấn luyện, bài tập. Dùng cho phân loại/phát hiện/phân đoạn ảnh."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[15]",
+  "name": "CS224N — NLP with Deep Learning",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "Stanford",
+  "year": "",
+  "url": "https://web.stanford.edu",
+  "note": "Biểu diễn từ, mô hình chuỗi, học sâu cho ngôn ngữ. Nền tảng NLP trước các hướng chuyên sâu."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[16]",
+  "name": "CS224W — Machine Learning with Graphs",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "Stanford",
+  "year": "",
+  "url": "https://web.stanford.edu",
+  "note": "Biểu diễn đồ thị, node embeddings, GNN, đồ thị tri thức. Slides và bài tập công khai tùy kỳ học."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[17]",
+  "name": "CS336 — Language Modeling from Scratch",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "Stanford (bản lưu trữ 2025)",
+  "year": "",
+  "url": "https://cs336.stanford.edu",
+  "note": "Xây tokenizer, Transformer, huấn luyện, xử lý dữ liệu, đánh giá. Khóa nâng cao: cần Python, PyTorch, kiến thức hệ thống."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[18]",
+  "name": "CS285 — Deep Reinforcement Learning",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "UC Berkeley",
+  "year": "",
+  "url": "https://rail.eecs.berkeley.edu",
+  "note": "Policy gradient, actor-critic, Q-learning, offline RL, mô hình môi trường. Học sau xác suất và mạng cơ bản."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[19]",
+  "name": "Introduction to Flow Matching and Diffusion Models",
+  "section": "7.2. Khóa học theo hướng chuyên môn `[10]`–`[19]`",
+  "author": "MIT",
+  "year": "",
+  "url": "https://diffusion.csail.mit.edu",
+  "note": "Tài liệu, bài giảng và labs về hai họ mô hình sinh. Cần xác suất, đạo hàm, nền tảng mạng nơ-ron."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[20]",
+  "name": "Learn the Basics",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "PyTorch",
+  "year": "",
+  "url": "https://docs.pytorch.org",
+  "note": "Quy trình thực hành: tensors, dữ liệu, xây mạng, autograd, tối ưu, lưu mô hình. Bài mẫu dùng FashionMNIST."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[21]",
+  "name": "Developer Guides",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "Keras",
+  "year": "",
+  "url": "https://keras.io",
+  "note": "Xây và huấn luyện mô hình, vòng lặp tùy chỉnh, lưu mô hình, các backend. Lựa chọn khác khi học công cụ triển khai."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[22]",
+  "name": "JAX Documentation",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "Nhóm phát triển JAX",
+  "year": "",
+  "url": "https://docs.jax.dev",
+  "note": "Tính toán mảng, tự động vi phân, biên dịch, vector hóa. Dành cho hướng tính toán/nghiên cứu sau khi hiểu nền tảng."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[23]",
+  "name": "LLM Course",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "Hugging Face",
+  "year": "",
+  "url": "https://huggingface.co",
+  "note": "Transformers, Datasets, Tokenizers, fine-tuning, chia sẻ mô hình. Nội dung miễn phí."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[24]",
+  "name": "Full Stack Deep Learning",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "Bản khóa học 2022",
+  "year": "",
+  "url": "https://fullstackdeeplearning.com",
+  "note": "Tổ chức hệ thống ML: phát triển, dữ liệu, thử nghiệm, triển khai, vận hành. Dùng khi chuyển từ notebook sang sản phẩm."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[25]",
+  "name": "Common Pitfalls and Recommended Practices",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "scikit-learn",
+  "year": "",
+  "url": "https://scikit-learn.org",
+  "note": "Lỗi tiền xử lý, rò rỉ dữ liệu, cách dùng pipeline. Áp dụng kiểm tra thiết kế thí nghiệm."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[26]",
+  "name": "snnTorch Tutorials",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "Nhóm phát triển snnTorch",
+  "year": "",
+  "url": "https://snntorch.readthedocs.io",
+  "note": "Mạng nơ-ron phát xung, mô hình nơ-ron, huấn luyện. Nhánh chuyên biệt, không cần học trước MLP/CNN."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[48]",
+  "name": "TensorFlow 2 Quickstart for Beginners",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "TensorFlow",
+  "year": "",
+  "url": "https://www.tensorflow.org",
+  "note": "Ví dụ nhập môn xây, huấn luyện, đánh giá mạng với TensorFlow và Keras."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[49]",
+  "name": "The Model Hub",
+  "section": "7.3. Công cụ và nguồn thực hành `[20]`–`[26]`, `[48]`–`[49]`",
+  "author": "Hugging Face",
+  "year": "",
+  "url": "https://huggingface.co",
+  "note": "Tìm và đọc tài liệu mô hình đã huấn luyện: model card, dữ liệu, điều kiện sử dụng, ví dụ triển khai."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[27]",
+  "name": "Learning representations by back-propagating errors",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Rumelhart, Hinton, Williams",
+  "year": "1986",
+  "url": "",
+  "note": "Bài báo kinh điển về học biểu diễn bằng lan truyền ngược sai số."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[28]",
+  "name": "Adam: A Method for Stochastic Optimization",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Kingma, Ba",
+  "year": "2014",
+  "url": "",
+  "note": "Thuật toán tối ưu sử dụng các ước lượng moment của gradient."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[29]",
+  "name": "Deep Residual Learning for Image Recognition",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "He và cộng sự",
+  "year": "2015",
+  "url": "",
+  "note": "Residual connections và kiến trúc ResNet cho mạng sâu."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[30]",
+  "name": "Attention Is All You Need",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Vaswani và cộng sự",
+  "year": "2017",
+  "url": "",
+  "note": "Kiến trúc Transformer và cơ chế attention nhiều đầu."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[31]",
+  "name": "Auto-Encoding Variational Bayes",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Kingma, Welling",
+  "year": "2013",
+  "url": "",
+  "note": "Nền tảng VAE và suy luận biến phân."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[32]",
+  "name": "Generative Adversarial Networks",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Goodfellow và cộng sự",
+  "year": "2014",
+  "url": "",
+  "note": "Khung học đối kháng giữa bộ sinh và bộ phân biệt."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[33]",
+  "name": "Denoising Diffusion Probabilistic Models",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Ho, Jain, Abbeel",
+  "year": "2020",
+  "url": "",
+  "note": "Mô hình sinh dựa trên quá trình thêm nhiễu và học khử nhiễu."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[34]",
+  "name": "LoRA: Low-Rank Adaptation of Large Language Models",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Hu và cộng sự",
+  "year": "2021",
+  "url": "",
+  "note": "Thích nghi mô hình bằng các ma trận cập nhật hạng thấp."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[35]",
+  "name": "Mamba: Linear-Time Sequence Modeling with Selective State Spaces",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Gu, Dao",
+  "year": "2023",
+  "url": "",
+  "note": "Mô hình chuỗi dùng không gian trạng thái có tính chọn lọc."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[36]",
+  "name": "Switch Transformers",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Fedus, Zoph, Shazeer",
+  "year": "2021",
+  "url": "",
+  "note": "Thiết kế Mixture of Experts với cơ chế chọn phần mạng xử lý dữ liệu."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[37]",
+  "name": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Lewis và cộng sự",
+  "year": "2020",
+  "url": "",
+  "note": "Kết hợp truy xuất tài liệu với mô hình sinh trong hệ thống RAG."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[38]",
+  "name": "Neural Ordinary Differential Equations",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Chen và cộng sự",
+  "year": "2018",
+  "url": "",
+  "note": "Mô hình hóa diễn biến liên tục của trạng thái ẩn bằng phương trình vi phân."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[39]",
+  "name": "Physics-Informed Deep Learning (Part I)",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "Raissi, Perdikaris, Karniadakis",
+  "year": "2017",
+  "url": "",
+  "note": "Mạng học với các ràng buộc từ phương trình vật lý. Nguồn mở đầu cho PINNs."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[40]",
+  "name": "A General Regression Neural Network",
+  "section": "7.4. Các bài nghiên cứu để đọc sâu `[27]`–`[40]`",
+  "author": "D. F. Specht",
+  "year": "1991",
+  "url": "",
+  "note": "Bài gốc về GRNN (DOI: 10.1109/72.97934); không phải kiến trúc mạng sâu nhiều tầng theo nghĩa thông thường."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[41]",
+  "name": "Multilayer Perceptrons (D2L mục 5.1)",
+  "section": "7.5. Tra cứu cơ chế và tìm nghiên cứu tiếp theo `[41]`–`[47]`, `[50]`",
+  "author": "",
+  "year": "",
+  "url": "https://d2l.ai",
+  "note": "Công thức tầng ẩn, ánh xạ phi tuyến, hàm kích hoạt. Nguồn chi tiết cho phần cơ chế."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[42]",
+  "name": "Forward/Backward Propagation and Computational Graphs (D2L mục 5.3)",
+  "section": "7.5. Tra cứu cơ chế và tìm nghiên cứu tiếp theo `[41]`–`[47]`, `[50]`",
+  "author": "",
+  "year": "",
+  "url": "https://d2l.ai",
+  "note": "Phân biệt lượt tính xuôi, đồ thị tính toán và gradient tính ngược."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[43]",
+  "name": "Dropout (D2L mục 5.6)",
+  "section": "7.5. Tra cứu cơ chế và tìm nghiên cứu tiếp theo `[41]`–`[47]`, `[50]`",
+  "author": "",
+  "year": "",
+  "url": "https://d2l.ai",
+  "note": "Regularization bằng dropout; cách hoạt động khi huấn luyện so với suy luận."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[44]",
+  "name": "Optimizing Model Parameters",
+  "section": "7.5. Tra cứu cơ chế và tìm nghiên cứu tiếp theo `[41]`–`[47]`, `[50]`",
+  "author": "",
+  "year": "",
+  "url": "https://docs.pytorch.org",
+  "note": "Loss, learning rate, batch size, epoch, vòng lặp huấn luyện và đánh giá. Đọc cùng mã mẫu chính thức."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[45]",
+  "name": "OpenReview",
+  "section": "7.5. Tra cứu cơ chế và tìm nghiên cứu tiếp theo `[41]`–`[47]`, `[50]`",
+  "author": "",
+  "year": "",
+  "url": "https://openreview.net",
+  "note": "Tra cứu bài nghiên cứu và nội dung phản biện khi được công khai. Kiểm tra venue và trạng thái từng bài."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[46]",
+  "name": "NeurIPS Proceedings",
+  "section": "7.5. Tra cứu cơ chế và tìm nghiên cứu tiếp theo `[41]`–`[47]`, `[50]`",
+  "author": "",
+  "year": "",
+  "url": "https://proceedings.neurips.cc",
+  "note": "Tra cứu bài theo năm trong kỷ yếu hội nghị. Lần theo công trình gốc từ tài liệu học."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[47]",
+  "name": "Proceedings of Machine Learning Research (PMLR)",
+  "section": "7.5. Tra cứu cơ chế và tìm nghiên cứu tiếp theo `[41]`–`[47]`, `[50]`",
+  "author": "",
+  "year": "",
+  "url": "https://proceedings.mlr.press",
+  "note": "Kỷ yếu nhiều hội nghị/workshop học máy; mỗi tập gắn với một sự kiện."
+ },
+ {
+  "doc_id": "nn-knowledge-map-v1",
+  "code": "[50]",
+  "name": "Machine Learning — Recent Submissions (arXiv)",
+  "section": "7.5. Tra cứu cơ chế và tìm nghiên cứu tiếp theo `[41]`–`[47]`, `[50]`",
+  "author": "",
+  "year": "",
+  "url": "https://arxiv.org",
+  "note": "Danh mục bản thảo học máy. Phân biệt bản thảo arXiv với bài đã được chấp nhận ở hội nghị/tạp chí."
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[01]",
+  "name": "Building Effective AI Agents",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Anthropic",
+  "note": "https://www.anthropic.com"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[02]",
+  "name": "Attention Is All You Need",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Vaswani và cộng sự",
+  "note": "https://arxiv.org"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[03]",
+  "name": "Training a causal language model from scratch",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Hugging Face",
+  "note": "https://huggingface.co"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[04]",
+  "name": "Retrieve and Re-Rank",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Sentence Transformers",
+  "note": "https://sbert.net"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[05]",
+  "name": "Document question answering",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Hugging Face",
+  "note": "https://huggingface.co"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[06]",
+  "name": "Tool use with Claude",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Claude Platform Docs",
+  "note": "https://platform.claude.com"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[07]",
+  "name": "What is an Agent",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Hugging Face Agents Course",
+  "note": "https://huggingface.co"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[08]",
+  "name": "ReAct: Synergizing Reasoning and Acting in Language Models",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Yao và cộng sự",
+  "note": "https://arxiv.org"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[09]",
+  "name": "AI Agent",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "n8n Docs",
+  "note": "https://docs.n8n.io"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[10]",
+  "name": "Tools Agent",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "n8n Docs",
+  "note": "https://docs.n8n.io"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[11]",
+  "name": "Human-in-the-loop for tools",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "n8n Docs",
+  "note": "https://docs.n8n.io"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[12]",
+  "name": "LangGraph overview",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "LangChain Docs",
+  "note": "https://docs.langchain.com"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[13]",
+  "name": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Lewis và cộng sự",
+  "note": "https://arxiv.org"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[14]",
+  "name": "How do Transformers work",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Hugging Face LLM Course",
+  "note": "https://huggingface.co"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[15]",
+  "name": "LoRA: Low-Rank Adaptation of Large Language Models",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Hu và cộng sự",
+  "note": "https://arxiv.org"
+ },
+ {
+  "doc_id": "nn-llm-agent-v1",
+  "code": "[16]",
+  "name": "Writing effective tools for AI agents",
+  "section": "16. Nguồn tham khảo",
+  "author": "",
+  "year": "",
+  "url": "Anthropic",
+  "note": "https://www.anthropic.com"
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[01]",
+  "name": "TensorFlow — Basic classification: Classify images of clothing",
+  "section": "Học thuật, nghiên cứu ngách và phân phối",
+  "author": "TensorFlow",
+  "year": "",
+  "url": "https://www.tensorflow.org/tutorials/keras/classification",
+  "note": "Dữ liệu ảnh, nhãn, mô hình và đánh giá; nguồn kiến thức video mẫu 54s."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[02]",
+  "name": "Google ML Crash Course — Neural Networks: Training using backpropagation",
+  "section": "Học thuật, nghiên cứu ngách và phân phối",
+  "author": "Google",
+  "year": "",
+  "url": "https://developers.google.com/machine-learning/crash-course/neural-networks/backpropagation",
+  "note": "Cơ chế điều chỉnh trọng số khi huấn luyện."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[03]",
+  "name": "Google ML Crash Course — Datasets: Dividing the original dataset",
+  "section": "Học thuật, nghiên cứu ngách và phân phối",
+  "author": "Google",
+  "year": "",
+  "url": "https://developers.google.com/machine-learning/crash-course/overfitting/dividing-datasets",
+  "note": "Phân chia dữ liệu học và đánh giá."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[04]",
+  "name": "TikTok Newsroom — Get inspired with Creator Search Insights",
+  "section": "Học thuật, nghiên cứu ngách và phân phối",
+  "author": "TikTok",
+  "year": "2024-03-13",
+  "url": "https://newsroom.tiktok.com/creator-search-insights?lang=en",
+  "note": "Ý tưởng từ nhu cầu tìm kiếm và khoảng trống nội dung; tính năng tùy khu vực."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[05]",
+  "name": "TikTok Creative Center — Top Ads",
+  "section": "Học thuật, nghiên cứu ngách và phân phối",
+  "author": "TikTok",
+  "year": "",
+  "url": "https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en",
+  "note": "Tham khảo quảng cáo; phân biệt dữ liệu quảng cáo với hiệu quả organic."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[06]",
+  "name": "Google Trends Help — FAQ about Google Trends data",
+  "section": "Học thuật, nghiên cứu ngách và phân phối",
+  "author": "Google",
+  "year": "",
+  "url": "https://support.google.com/trends/answer/4365533?hl=vi",
+  "note": "Cách đọc chỉ số tương đối 0–100."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[07]",
+  "name": "TikTok Help Center — Cách nội dung được đề xuất trên TikTok",
+  "section": "Học thuật, nghiên cứu ngách và phân phối",
+  "author": "TikTok",
+  "year": "",
+  "url": "https://support.tiktok.com/vi/using-tiktok/exploring-videos/how-tiktok-recommends-content",
+  "note": "Các nhóm tín hiệu đề xuất, gồm tương tác và thời gian xem."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[08]",
+  "name": "TikTok Shop Academy Việt Nam — Hoa Hồng Tiếp Thị Liên Kết cho Nhà Sáng Tạo",
+  "section": "Học thuật, nghiên cứu ngách và phân phối",
+  "author": "TikTok Shop Academy VN",
+  "year": "2026-02-19",
+  "url": "https://seller-vn.tiktok.com/university/essay?default_language=en&knowledge_id=6837840205842177",
+  "note": "Cách tính hoa hồng và quyết toán."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[09]",
+  "name": "TikTok Shop Academy Việt Nam — Hướng dẫn về Link Tiếp Thị Liên Kết dành cho Nhà Sáng Tạo",
+  "section": "Kiếm tiền, khai báo nội dung và xuất bản",
+  "author": "TikTok Shop Academy VN",
+  "year": "2026-06-23",
+  "url": "https://seller-vn.tiktok.com/university/essay?course_type=1&knowledge_id=1679024774448913",
+  "note": "Link affiliate và ghi công."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[10]",
+  "name": "TikTok Help Center — Creator Rewards và Creator Fund khác nhau thế nào",
+  "section": "Kiếm tiền, khai báo nội dung và xuất bản",
+  "author": "TikTok",
+  "year": "",
+  "url": "https://support.tiktok.com/en/business-and-creator/creator-rewards-program/how-is-the-creator-rewards-program-different-from-the-tiktok-creator-fund?invalid_lang=hi",
+  "note": "Điều kiện nội dung và thời lượng của Creator Rewards."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[11]",
+  "name": "TikTok Help Center — Quảng bá thương hiệu, sản phẩm hoặc dịch vụ",
+  "section": "Kiếm tiền, khai báo nội dung và xuất bản",
+  "author": "TikTok",
+  "year": "",
+  "url": "https://support.tiktok.com/vi/business-and-creator/creator-and-business-accounts/promoting-a-brand-product-or-service",
+  "note": "Khai báo nội dung thương mại khi quảng bá."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[12]",
+  "name": "TikTok Help Center — AI-generated content",
+  "section": "Kiếm tiền, khai báo nội dung và xuất bản",
+  "author": "TikTok",
+  "year": "",
+  "url": "https://support.tiktok.com/en/using-tiktok/creating-videos/ai-generated-content?ref_type=adv",
+  "note": "Nhãn AI cho nội dung có hình, âm thanh hoặc video chân thực."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[13]",
+  "name": "TikTok Help Center — Commercial use of music on TikTok",
+  "section": "Kiếm tiền, khai báo nội dung và xuất bản",
+  "author": "TikTok",
+  "year": "",
+  "url": "https://support.tiktok.com/en/business-and-creator/creator-and-business-accounts/commercial-use-of-music-on-tiktok?lang=en",
+  "note": "Phạm vi nhạc thương mại và Commercial Music Library."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[14]",
+  "name": "TikTok for Developers — Get Started-Direct Post",
+  "section": "Kiếm tiền, khai báo nội dung và xuất bản",
+  "author": "TikTok Developers",
+  "year": "2026-08-04",
+  "url": "https://developers.tiktok.com/docs/en/content-posting-api-get-started",
+  "note": "Quyền video.publish, ủy quyền và giới hạn tài khoản ứng dụng chưa được audit."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[15]",
+  "name": "TikTok for Developers — Content Sharing Guidelines",
+  "section": "Kiếm tiền, khai báo nội dung và xuất bản",
+  "author": "TikTok Developers",
+  "year": "2026-08-04",
+  "url": "https://developers.tiktok.com/docs/en/content-sharing-guidelines",
+  "note": "Use case, giao diện xem trước, đồng ý đăng, trạng thái bài."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[16]",
+  "name": "Runway Help Center — Image to Video Prompting Guide",
+  "section": "Kiếm tiền, khai báo nội dung và xuất bản",
+  "author": "Runway",
+  "year": "",
+  "url": "https://help.runwayml.com/hc/en-us/articles/48324313115155-Image-to-Video-Prompting-Guide",
+  "note": "Ảnh làm điểm xuất phát; prompt tập trung vào chuyển động và máy quay."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[17]",
+  "name": "ElevenLabs Docs — Text to Speech",
+  "section": "Công cụ sản xuất, truy xuất và tự động hóa",
+  "author": "ElevenLabs",
+  "year": "",
+  "url": "https://elevenlabs.io/docs/overview/capabilities/text-to-speech",
+  "note": "Chuyển lời viết thành giọng đọc; tài liệu có liệt kê tiếng Việt."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[18]",
+  "name": "CapCut Help — Làm cách nào để nhận dạng phụ đề?",
+  "section": "Công cụ sản xuất, truy xuất và tự động hóa",
+  "author": "CapCut",
+  "year": "",
+  "url": "https://www.capcut.com/vi-vn/help/how-to-recognise-subtitles",
+  "note": "Tạo phụ đề bằng nhận dạng lời nói, sau đó chỉnh lại."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[19]",
+  "name": "Sentence Transformers — Retrieve & Re-Rank",
+  "section": "Công cụ sản xuất, truy xuất và tự động hóa",
+  "author": "Sentence Transformers",
+  "year": "",
+  "url": "https://sbert.net/examples/sentence_transformer/applications/retrieve_rerank/README.html",
+  "note": "Embedding để truy xuất và reranker để xếp mức liên quan."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[20]",
+  "name": "Anthropic Engineering — Building effective agents",
+  "section": "Công cụ sản xuất, truy xuất và tự động hóa",
+  "author": "Anthropic",
+  "year": "2024-12-19",
+  "url": "https://www.anthropic.com/engineering/building-effective-agents",
+  "note": "Phân biệt workflow cố định và agent chọn bước."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[21]",
+  "name": "n8n Docs — Human-in-the-loop for tools",
+  "section": "Công cụ sản xuất, truy xuất và tự động hóa",
+  "author": "n8n",
+  "year": "",
+  "url": "https://docs.n8n.io/build/integrate-ai/ai-examples/human-in-the-loop-for-tools",
+  "note": "Cấu hình người duyệt trước một số công cụ của AI Agent."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[22]",
+  "name": "TikTok Shop Academy Việt Nam — Đơn Hàng Tiếp Thị Liên Kết",
+  "section": "Công cụ sản xuất, truy xuất và tự động hóa",
+  "author": "TikTok Shop Academy VN",
+  "year": "",
+  "url": "https://seller-vn.tiktok.com/university/essay?knowledge_id=2162928711796482",
+  "note": "Trạng thái đơn, hoàn tiền và hoa hồng sau quyết toán."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[23]",
+  "name": "Zalando Research — Fashion-MNIST",
+  "section": "Công cụ sản xuất, truy xuất và tự động hóa",
+  "author": "Zalando Research",
+  "year": "",
+  "url": "https://github.com/zalandoresearch/fashion-mnist",
+  "note": "Dữ liệu gốc phân loại ảnh thời trang."
+ },
+ {
+  "doc_id": "mmo-ai-tiktok-roadmap-v1",
+  "code": "[24]",
+  "name": "TikTok Help Center — Series on TikTok",
+  "section": "Công cụ sản xuất, truy xuất và tự động hóa",
+  "author": "TikTok",
+  "year": "",
+  "url": "https://support.tiktok.com/vi/business-and-creator/tiktok-series/about-tiktok-series",
+  "note": "Nội dung trả phí cho nhà sáng tạo đủ điều kiện."
+ }
+]

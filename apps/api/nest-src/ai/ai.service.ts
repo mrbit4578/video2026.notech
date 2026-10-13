@@ -1,0 +1,854 @@
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  InternalServerErrorException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common'
+import { encrypt, decrypt } from '@orh/crypto'
+import { PrismaService } from '../prisma/prisma.service'
+import { AuditLogService } from '../audit/audit.service'
+import { fetchTimeout } from '../common/safe-fetch'
+import { getProviderMeta, publicProviderMeta, type AiProviderMeta, type AiProviderId } from './ai.providers'
+import {
+  EMBEDDING_DIMS,
+  makeProvenance,
+  type EmbeddingProvenance,
+} from './embedding-provenance'
+import type { ConnectAiDto, ChatDto, ChatMessageDto } from './dto'
+
+const VALIDATE_TIMEOUT_MS = 10_000
+const CHAT_TIMEOUT_MS = 90_000
+
+/** Model embedding cho từng provider — đồng bộ với EMBEDDING_MODEL_BY_PROVIDER. */
+const OPENAI_EMBED_MODEL = 'text-embedding-3-small'
+const GEMINI_EMBED_MODEL = 'gemini-embedding-001'
+
+/**
+ * Thứ tự ưu tiên khi tự động chuyển provider (combo key).
+ * Ví dụ: grok qua ExperientialLabs lỗi 429 model_requires_purchase → tự chuyển
+ * sang OpenAI, rồi Gemini — miễn là workspace đã kết nối key đó.
+ */
+export const FALLBACK_PRIORITY: AiProviderId[] = [
+  'openai',
+  'gemini',
+  'vyceai',
+  'muse',
+  'experientiallabs',
+  'apmix',
+  'deepseek',
+  'anthropic',
+  'xai',
+  'groq',
+  'moonshot',
+]
+
+export interface EmbeddingKeyInfo {
+  meta: AiProviderMeta
+  apiKey: string
+  /** Số chiều gốc của model embedding */
+  dims: 768 | 1536
+}
+
+/**
+ * AiService — quản lý API key các nền tảng AI của user và proxy chat.
+ *
+ * BẢO MẬT:
+ * - API key chỉ tồn tại ở server: validate → mã hóa AES-256-GCM → lưu DB.
+ * - KHÔNG BAO GIỜ: trả key về frontend, log key, đưa key vào audit metadata hay error message.
+ * - Mọi lỗi từ provider đều được sanitize (thay key bằng [redacted]) trước khi trả về.
+ */
+
+function safeBodyText(text: string): string {
+  return text.length > 500 ? text.slice(0, 500) + '…' : text
+}
+
+@Injectable()
+export class AiService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogService,
+  ) {}
+
+  /** Metadata public cho frontend — không chứa secret hay baseUrl nội bộ. */
+  listProviders() {
+    return publicProviderMeta()
+  }
+
+  // ─── Validate API key bằng 1 call nhẹ (timeout 10s) ──────────────────────
+
+  /**
+   * Trả về true nếu key hợp lệ.
+   * Ném BadRequestException('API key không hợp lệ…') khi key sai,
+   * HttpException 502 khi không kết nối được tới provider (lỗi mạng).
+   */
+  private async validateKey(meta: AiProviderMeta, apiKey: string): Promise<void> {
+    try {
+      let valid: boolean
+      switch (meta.kind) {
+        case 'gemini':
+          valid = await this.validateGemini(meta, apiKey)
+          break
+        case 'anthropic':
+          valid = await this.validateAnthropic(meta, apiKey)
+          break
+        case 'tinyfish':
+          valid = await this.validateTinyFish(apiKey)
+          break
+        case 'pollinations':
+          valid = await this.validatePollinations(apiKey)
+          break
+        default:
+          valid = await this.validateOpenAiCompatible(meta, apiKey)
+      }
+      if (!valid) {
+        throw new BadRequestException(
+          `API key không hợp lệ cho ${meta.name}. Hãy kiểm tra lại key và quyền truy cập.`,
+        )
+      }
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err
+      // Lỗi mạng/timeout khi validate → 502, KHÔNG kết luận key sai
+      throw new HttpException(
+        `Không kết nối được tới ${meta.name} để kiểm tra key. Hãy thử lại sau.`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+  }
+
+  private async validateGemini(meta: AiProviderMeta, apiKey: string): Promise<boolean> {
+    const res = await fetchTimeout(
+      `${meta.baseUrl}/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+      {},
+      VALIDATE_TIMEOUT_MS,
+    )
+    return res.ok
+  }
+
+  private async validateOpenAiCompatible(meta: AiProviderMeta, apiKey: string): Promise<boolean> {
+    const res = await fetchTimeout(`${meta.baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }, VALIDATE_TIMEOUT_MS)
+    if (res.status === 401 || res.status === 403) return false
+    return res.ok
+  }
+
+  private async validateAnthropic(meta: AiProviderMeta, apiKey: string): Promise<boolean> {
+    // Anthropic không có endpoint kiểm tra key riêng → dùng 1 messages call tối thiểu.
+    // Key đúng nhưng model sai vẫn trả 404 (not_found_error) → coi là key HỢP LỆ.
+    // Chỉ 401/authentication_error mới là key SAI.
+    const res = await fetchTimeout(`${meta.baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'ping' }],
+      }),
+    }, VALIDATE_TIMEOUT_MS)
+    if (res.ok) return true
+    if (res.status === 401 || res.status === 403) return false
+    try {
+      const data = (await res.json()) as { error?: { type?: string } }
+      const type = data?.error?.type ?? ''
+      // Model không tồn tại / không có quyền dùng model — nhưng key thì đúng
+      if (type === 'not_found_error' || res.status === 404) return true
+      if (type === 'authentication_error') return false
+    } catch {
+      // body không parse được → không kết luận
+    }
+    return false
+  }
+
+  /**
+   * TinyFish không phải LLM chat — validate bằng 1 search call rẻ nhất
+   * (gói Search miễn phí). 401/403 → key sai; ok → key hợp lệ.
+   */
+  private async validateTinyFish(apiKey: string): Promise<boolean> {
+    const res = await fetchTimeout(
+      `https://api.search.tinyfish.ai?query=${encodeURIComponent('tinyfish')}&limit=1`,
+      { headers: { 'X-API-Key': apiKey } },
+      VALIDATE_TIMEOUT_MS,
+    )
+    if (res.status === 401 || res.status === 403) return false
+    return res.ok
+  }
+
+  /**
+   * Pollinations là API tạo ảnh (không phải LLM chat) — validate bằng 1 ảnh
+   * thumbnail rẻ nhất (gói free không giới hạn nên không tốn gì).
+   * 401/403 → key sai; timeout/lỗi mạng → 502 (thử lại sau), không kết luận key sai.
+   */
+  private async validatePollinations(apiKey: string): Promise<boolean> {
+    const res = await fetchTimeout(
+      `https://gen.pollinations.ai/image/${encodeURIComponent('ok')}?model=flux&width=64&height=64&nologo=true`,
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+      60_000,
+    )
+    if (res.status === 401 || res.status === 403) return false
+    return res.ok
+  }
+
+  // ─── CRUD connections ────────────────────────────────────────────────────
+
+  /** POST /ai/connections — validate key rồi mã hóa & lưu (upsert). */
+  async connect(workspaceId: string, dto: ConnectAiDto, ip?: string) {
+    const meta = getProviderMeta(dto.provider)
+    if (!meta) throw new BadRequestException('Provider không được hỗ trợ.')
+
+    const apiKey = dto.apiKey.trim()
+    // KHÔNG log apiKey ở bất cứ đâu trong hàm này
+
+    await this.validateKey(meta, apiKey)
+
+    let keyCipher: string
+    try {
+      keyCipher = encrypt(apiKey)
+    } catch {
+      throw new InternalServerErrorException(
+        'Lỗi mã hóa: TOKEN_ENCRYPTION_KEY chưa được cấu hình đúng.',
+      )
+    }
+
+    const keyHint = `••••${apiKey.slice(-4)}`
+    const now = new Date()
+    const conn = await this.prisma.aiConnection.upsert({
+      where: { workspaceId_provider: { workspaceId, provider: meta.id } },
+      create: {
+        workspaceId,
+        provider: meta.id,
+        keyCipher,
+        keyHint,
+        status: 'active',
+        validatedAt: now,
+      },
+      update: { keyCipher, keyHint, status: 'active', validatedAt: now },
+    })
+
+    await this.audit.log({
+      workspaceId,
+      actorId: workspaceId,
+      action: 'ai_connected',
+      provider: meta.id,
+      entityType: 'ai_connection',
+      targetId: conn.id,
+      result: 'success',
+      ip,
+    })
+
+    return {
+      provider: conn.provider,
+      status: conn.status,
+      keyHint: conn.keyHint,
+      validatedAt: conn.validatedAt,
+    }
+  }
+
+  /** GET /ai/connections — KHÔNG trả keyCipher. */
+  async list(workspaceId: string) {
+    const conns = await this.prisma.aiConnection.findMany({
+      where: { workspaceId },
+      orderBy: { provider: 'asc' },
+    })
+    return conns.map((c) => ({
+      provider: c.provider,
+      status: c.status,
+      keyHint: c.keyHint,
+      validatedAt: c.validatedAt,
+      lastUsedAt: c.lastUsedAt,
+    }))
+  }
+
+  /** DELETE /ai/connections/:provider */
+  async remove(workspaceId: string, provider: string, ip?: string) {
+    const meta = getProviderMeta(provider)
+    if (!meta) throw new BadRequestException('Provider không được hỗ trợ.')
+
+    const deleted = await this.prisma.aiConnection.deleteMany({
+      where: { workspaceId, provider: meta.id },
+    })
+    if (deleted.count === 0) {
+      throw new NotFoundException(`Chưa kết nối ${meta.name}.`)
+    }
+
+    await this.audit.log({
+      workspaceId,
+      actorId: workspaceId,
+      action: 'ai_disconnected',
+      provider: meta.id,
+      entityType: 'ai_connection',
+      result: 'success',
+      ip,
+    })
+
+    return { ok: true, provider: meta.id }
+  }
+
+  // ─── Chat ────────────────────────────────────────────────────────────────
+
+  /**
+   * Lấy key chat đã giải mã cho agent loop / các service nội bộ khác.
+   * Ném BadRequestException khi chưa kết nối hoặc key bị vô hiệu — cùng UX với chat().
+   * KHÔNG log apiKey.
+   */
+  async getChatKey(
+    workspaceId: string,
+    provider: AiProviderId,
+  ): Promise<{ meta: AiProviderMeta; apiKey: string; connId: string }> {
+    const meta = getProviderMeta(provider)
+    if (!meta) throw new BadRequestException('Provider không được hỗ trợ.')
+
+    const conn = await this.prisma.aiConnection.findUnique({
+      where: { workspaceId_provider: { workspaceId, provider: meta.id } },
+    })
+    if (!conn || conn.status !== 'active') {
+      throw new BadRequestException(
+        `Chưa kết nối ${meta.name} hoặc key đã bị vô hiệu. Hãy kết nối lại ở Cài đặt → AI Pro.`,
+      )
+    }
+
+    return { meta, apiKey: this.decryptConnKey(conn.keyCipher), connId: conn.id }
+  }
+
+  // ─── Combo fallback: provider chính lỗi → tự chuyển sang key khác ───────────
+
+  /** Chỉ lỗi phía provider/server (5xx) mới đáng thử provider khác. */
+  private isFallbackableError(err: unknown): boolean {
+    return err instanceof HttpException && err.getStatus() >= 500
+  }
+
+  /** Lý do ngắn gọn khi đã tự chuyển provider — không chứa secret (đã sanitize ở providerError). */
+  private fallbackReason(err: unknown): string {
+    const msg = err instanceof Error ? err.message : String(err)
+    return msg.length > 160 ? msg.slice(0, 160) + '…' : msg
+  }
+
+  /** Giải mã key của 1 connection — ném lỗi 500 khi key mã hóa không khớp. */
+  private decryptConnKey(keyCipher: string): string {
+    try {
+      return decrypt(keyCipher)
+    } catch {
+      throw new InternalServerErrorException(
+        'Lỗi giải mã key: TOKEN_ENCRYPTION_KEY chưa được cấu hình đúng.',
+      )
+    }
+  }
+
+  /** Gọi provider một lần: gọi model + cập nhật lastUsedAt + audit log. */
+  private async runSingleProviderChat(
+    workspaceId: string,
+    meta: AiProviderMeta,
+    apiKey: string,
+    connId: string,
+    model: string,
+    messages: ChatMessageDto[],
+    maxTokens: number,
+    ip?: string,
+  ) {
+    let result: { content: string; usage?: Record<string, unknown> }
+    try {
+      switch (meta.kind) {
+        case 'gemini':
+          result = await this.chatGemini(meta, apiKey, model, messages, maxTokens, connId)
+          break
+        case 'anthropic':
+          result = await this.chatAnthropic(meta, apiKey, model, messages, maxTokens, connId)
+          break
+        default:
+          result = await this.chatOpenAiCompatible(meta, apiKey, model, messages, maxTokens, connId)
+      }
+    } catch (err) {
+      if (err instanceof HttpException) throw err
+      throw new HttpException(
+        `Không kết nối được tới ${meta.name}. Hãy thử lại sau.`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+
+    await this.prisma.aiConnection.update({
+      where: { id: connId },
+      data: { lastUsedAt: new Date() },
+    })
+    await this.audit.log({
+      workspaceId,
+      actorId: workspaceId,
+      action: 'ai_chat',
+      provider: meta.id,
+      entityType: 'ai_connection',
+      targetId: connId,
+      result: 'success',
+      // Chỉ log metadata — KHÔNG log nội dung chat của user
+      metadata: { model, messageCount: messages.length },
+      ip,
+    })
+
+    return { content: result.content, model, usage: result.usage ?? null, provider: meta.id }
+  }
+
+  /**
+   * POST /ai/chat — giải mã key server-side rồi proxy tới provider.
+   * Combo fallback: provider chính lỗi (5xx/timeout/key hỏng) → tự động thử
+   * các key khác đã kết nối theo FALLBACK_PRIORITY. Response kèm `fallback`
+   * để frontend hiển thị cho user biết đã chuyển provider.
+   */
+  async chat(workspaceId: string, dto: ChatDto, ip?: string) {
+    const meta = getProviderMeta(dto.provider)
+    if (!meta) throw new BadRequestException('Provider không được hỗ trợ.')
+    // TinyFish (Search/Fetch) và Pollinations (tạo ảnh) là API tiện ích cho agent,
+    // không phải model chat.
+    if (meta.kind === 'tinyfish' || meta.kind === 'pollinations') {
+      throw new BadRequestException(
+        `${meta.name} là API tiện ích (${meta.kind === 'tinyfish' ? 'tìm kiếm web cho tool web_search/fetch_url của AI Copilot' : 'tạo ảnh cho bước "Sinh ảnh" của Studio'}), không phải model chat. Hãy chọn một provider chat khác.`,
+      )
+    }
+
+    const conn = await this.prisma.aiConnection.findUnique({
+      where: { workspaceId_provider: { workspaceId, provider: meta.id } },
+    })
+    if (!conn || conn.status !== 'active') {
+      throw new BadRequestException(
+        `Chưa kết nối ${meta.name} hoặc key đã bị vô hiệu. Hãy kết nối lại ở Cài đặt → AI Pro.`,
+      )
+    }
+
+    const model = dto.model?.trim() || meta.defaultModel
+    const maxTokens = dto.maxTokens ?? 1024
+
+    // Thử provider chính trước
+    let primaryError: unknown = null
+    try {
+      const apiKey = this.decryptConnKey(conn.keyCipher)
+      return await this.runSingleProviderChat(
+        workspaceId,
+        meta,
+        apiKey,
+        conn.id,
+        model,
+        dto.messages,
+        maxTokens,
+        ip,
+      )
+    } catch (err) {
+      primaryError = err
+    }
+
+    // Lỗi do user (400) thì không fallback — báo thẳng
+    if (!this.isFallbackableError(primaryError)) throw primaryError
+
+    // Tìm key dự phòng: các connection active khác, xếp theo thứ tự ưu tiên
+    const others = await this.prisma.aiConnection.findMany({
+      where: { workspaceId, status: 'active', provider: { not: meta.id } },
+    })
+    const rank = new Map(FALLBACK_PRIORITY.map((id, i) => [id, i]))
+    others.sort(
+      (a, b) =>
+        (rank.get(a.provider as AiProviderId) ?? 99) - (rank.get(b.provider as AiProviderId) ?? 99),
+    )
+
+    for (const fbConn of others) {
+      const fbMeta = getProviderMeta(fbConn.provider)
+      if (!fbMeta) continue
+      try {
+        const fbKey = this.decryptConnKey(fbConn.keyCipher)
+        // Model của provider chính có thể không tồn tại ở provider dự phòng
+        // → dùng defaultModel của provider dự phòng
+        const fbResult = await this.runSingleProviderChat(
+          workspaceId,
+          fbMeta,
+          fbKey,
+          fbConn.id,
+          fbMeta.defaultModel,
+          dto.messages,
+          maxTokens,
+          ip,
+        )
+        return {
+          ...fbResult,
+          fallback: {
+            from: meta.id,
+            to: fbMeta.id,
+            reason: this.fallbackReason(primaryError),
+          },
+        }
+      } catch {
+        // Thử provider tiếp theo
+      }
+    }
+
+    // Không có provider dự phòng nào chạy được → ném lỗi gốc của provider chính
+    throw primaryError
+  }
+
+  /** Thay key bằng [redacted] trong mọi message lỗi trước khi trả về client. */
+  private sanitizeError(message: string, apiKey: string): string {
+    return safeBodyText(message.split(apiKey).join('[redacted]'))
+  }
+
+  // ─── Embeddings (dùng cho RAG) ────────────────────────────────────────────
+
+  /**
+   * Lấy key để tạo embedding: ưu tiên OpenAI (text-embedding-3-small, 1536 dim),
+   * fallback Gemini (gemini-embedding-001, 1536 dim).
+   * (text-embedding-004 đã bị Google khai tử từ 14/01/2026.)
+   * Ném BadRequestException kèm hướng dẫn khi workspace chưa có key nào.
+   */
+  async getEmbeddingKey(workspaceId: string): Promise<EmbeddingKeyInfo> {
+    const conns = await this.prisma.aiConnection.findMany({
+      where: { workspaceId, status: 'active' },
+    })
+    // Combo key: ưu tiên OpenAI rồi Gemini — thử giải mã từng key, key nào
+    // giải mã được thì dùng (chống lệch TOKEN_ENCRYPTION_KEY giữa các deploy).
+    const ordered = [
+      conns.find((c) => c.provider === 'openai'),
+      conns.find((c) => c.provider === 'gemini'),
+    ].filter((c): c is (typeof conns)[number] => Boolean(c))
+    if (ordered.length === 0) {
+      throw new BadRequestException(
+        'Chưa có API key nào để tạo embedding. Hãy vào Cài đặt → AI Pro để thêm key OpenAI (khuyến nghị) hoặc Gemini.',
+      )
+    }
+    for (const chosen of ordered) {
+      const meta = getProviderMeta(chosen.provider)
+      if (!meta) continue
+      try {
+        const apiKey = decrypt(chosen.keyCipher)
+        // KHÔNG log apiKey
+        return { meta, apiKey, dims: 1536 }
+      } catch {
+        // Thử key tiếp theo
+      }
+    }
+    throw new InternalServerErrorException('Lỗi giải mã key: TOKEN_ENCRYPTION_KEY chưa đúng.')
+  }
+
+  /**
+   * Tạo embedding cho danh sách text. Luôn trả về vector 1536 chiều KÈM provenance
+   * (kaizen A01/A03) để caller ghi đúng embedding namespace, tránh trộn vector
+   * khác provider/model trong cùng workspace.
+   * embedGemini tự chuẩn hoá mọi số chiều trả về (cắt ngắn nếu dài hơn,
+   * zero-pad nếu ngắn hơn) nên tương thích với chunks đã lưu trước đây.
+   */
+  async embed(
+    workspaceId: string,
+    texts: string[],
+    ip?: string,
+  ): Promise<{ vectors: number[][]; provenance: EmbeddingProvenance }> {
+    const { meta, apiKey, dims } = await this.getEmbeddingKey(workspaceId)
+    // Model quyết định namespace — lấy đúng model đã gọi, không đoán
+    const model = meta.id === 'openai' ? OPENAI_EMBED_MODEL : GEMINI_EMBED_MODEL
+    const provenance = makeProvenance(meta.id, model, EMBEDDING_DIMS)
+    if (texts.length === 0) return { vectors: [], provenance }
+
+    try {
+      const raw: number[][] =
+        meta.id === 'openai'
+          ? await this.embedOpenAi(meta, apiKey, texts)
+          : await this.embedGemini(meta, apiKey, texts)
+
+      const vectors =
+        dims === 768
+          ? raw.map((v) => [...v, ...new Array(1536 - v.length).fill(0)])
+          : raw
+
+      await this.audit.log({
+        workspaceId,
+        actorId: workspaceId,
+        action: 'ai_embed',
+        provider: meta.id,
+        entityType: 'ai_connection',
+        result: 'success',
+        // Chỉ metadata — không log nội dung text; space không chứa secret
+        metadata: { texts: texts.length, dims: 1536, model, space: provenance.space },
+        ip,
+      })
+      return { vectors, provenance }
+    } catch (err) {
+      if (err instanceof HttpException) throw err
+      throw new HttpException(
+        `Không tạo được embedding qua ${meta.name}. Hãy thử lại sau.`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+  }
+
+  private async embedOpenAi(
+    meta: AiProviderMeta,
+    apiKey: string,
+    texts: string[],
+  ): Promise<number[][]> {
+    const res = await fetchTimeout(
+      `${meta.baseUrl}/embeddings`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ model: OPENAI_EMBED_MODEL, input: texts }),
+      },
+      CHAT_TIMEOUT_MS,
+    )
+    const text = await res.text()
+    if (!res.ok) {
+      throw new HttpException(
+        `${meta.name} trả lỗi ${res.status}: ${this.sanitizeError(text, apiKey)}`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+    const data = JSON.parse(text) as { data?: Array<{ embedding?: number[] }> }
+    const vectors = (data.data ?? []).map((d) => d.embedding ?? [])
+    if (vectors.length !== texts.length || vectors.some((v) => v.length !== 1536)) {
+      throw new HttpException(
+        `Phản hồi embedding từ ${meta.name} không hợp lệ.`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+    return vectors
+  }
+
+  private async embedGemini(
+    meta: AiProviderMeta,
+    apiKey: string,
+    texts: string[],
+  ): Promise<number[][]> {
+    const url =
+      `${meta.baseUrl}/v1beta/models/${GEMINI_EMBED_MODEL}:batchEmbedContents?key=${encodeURIComponent(apiKey)}`
+    const body = JSON.stringify({
+      requests: texts.map((t) => ({
+        model: `models/${GEMINI_EMBED_MODEL}`,
+        content: { parts: [{ text: t }] },
+        // Xin đúng 1536 dim (model hỗ trợ Matryoshka 128–3072).
+        // Nếu API bỏ qua field này, đoạn chuẩn hoá bên dưới vẫn xử lý được.
+        outputDimensionality: 1536,
+      })),
+    })
+    // Tự thử lại khi gặp 429 (quota free-tier): Google gợi ý thời gian chờ
+    // trong message ("Please retry in 32.0s"); không có thì backoff tăng dần.
+    const maxAttempts = 4
+    let text = ''
+    let ok = false
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const res = await fetchTimeout(
+        url,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body },
+        CHAT_TIMEOUT_MS,
+      )
+      text = await res.text()
+      if (res.status === 429 && attempt < maxAttempts) {
+        const hinted = /retry in ([\d.]+)s/i.exec(text)?.[1]
+        const waitMs = hinted
+          ? Math.min(120000, Math.ceil(parseFloat(hinted) * 1000) + 2000)
+          : Math.min(60000, 15000 * attempt)
+        await new Promise((r) => setTimeout(r, waitMs))
+        continue
+      }
+      if (!res.ok) {
+        throw new HttpException(
+          `${meta.name} trả lỗi ${res.status}: ${this.sanitizeError(text, apiKey)}`,
+          HttpStatus.BAD_GATEWAY,
+        )
+      }
+      ok = true
+      break
+    }
+    if (!ok) {
+      // Hết số lần thử vẫn 429: báo rõ để người dùng biết chờ quota reset
+      throw new HttpException(
+        `${meta.name} trả lỗi 429: ${this.sanitizeError(text, apiKey)}`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+    const data = JSON.parse(text) as {
+      responses?: Array<{ embedding?: { values?: number[]; value?: number[] } }>
+      embeddings?: Array<{ values?: number[]; value?: number[] }>
+    }
+    // Google có thể trả 1 trong 2 dạng:
+    // - { responses: [{ embedding: { values: [...] } }] } (tài liệu batchEmbedContents)
+    // - { embeddings: [{ values: [...] }] } (thực tế API trả về cho gemini-embedding-001)
+    const raw: number[][] = []
+    if (Array.isArray(data.responses)) {
+      for (const r of data.responses) raw.push(r.embedding?.values ?? r.embedding?.value ?? [])
+    } else if (Array.isArray(data.embeddings)) {
+      for (const e of data.embeddings) raw.push(e.values ?? e.value ?? [])
+    }
+    // Chuẩn hoá mọi vector về đúng 1536 chiều:
+    // - dài hơn → cắt ngắn (an toàn với Matryoshka embedding như gemini-embedding-001)
+    // - ngắn hơn → zero-pad (cosine similarity được bảo toàn)
+    const vectors = raw.map((v) => {
+      if (v.length === 1536) return v
+      if (v.length > 1536) return v.slice(0, 1536)
+      return [...v, ...new Array(1536 - v.length).fill(0)]
+    })
+    if (vectors.length !== texts.length || vectors.some((v) => v.length !== 1536)) {
+      // Chẩn đoán không nhạy cảm: chỉ đếm số lượng, số chiều và tên field gốc
+      const firstDim = raw.length > 0 ? raw[0].length : -1
+      const topKeys = Object.keys(data ?? {}).join(',')
+      throw new HttpException(
+        `Phản hồi embedding từ ${meta.name} không hợp lệ ` +
+          `(gửi ${texts.length}, nhận ${raw.length} vectors, ` +
+          `dim đầu: ${firstDim}, keys: ${topKeys}).`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+    return vectors
+  }
+
+  private providerError(
+    meta: AiProviderMeta,
+    apiKey: string,
+    res: Response,
+    bodyText: string,
+    connId: string,
+  ): HttpException {
+    // Key bị thu hồi/sai → đánh dấu invalid cho ĐÚNG connection này để user biết cần kết nối lại
+    if (res.status === 401 || res.status === 403) {
+      this.prisma.aiConnection
+        .update({ where: { id: connId }, data: { status: 'invalid' } })
+        .catch(() => {})
+      return new HttpException(
+        `API key ${meta.name} đã bị từ chối (có thể đã bị thu hồi). Hãy kết nối lại key mới.`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+    return new HttpException(
+      `${meta.name} trả lỗi ${res.status}: ${this.sanitizeError(bodyText, apiKey)}`,
+      HttpStatus.BAD_GATEWAY,
+    )
+  }
+
+  private async chatGemini(
+    meta: AiProviderMeta,
+    apiKey: string,
+    model: string,
+    messages: ChatMessageDto[],
+    maxTokens: number,
+    connId: string,
+  ) {
+    const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n')
+    const contents = messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }))
+    const res = await fetchTimeout(
+      `${meta.baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+          contents,
+          generationConfig: { maxOutputTokens: maxTokens },
+        }),
+      },
+      CHAT_TIMEOUT_MS,
+    )
+    const text = await res.text()
+    if (!res.ok) throw this.providerError(meta, apiKey, res, text, connId)
+    const data = JSON.parse(text) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+      usageMetadata?: Record<string, unknown>
+    }
+    const content =
+      data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
+    if (!content) {
+      throw new HttpException(
+        `${meta.name} không trả về nội dung (có thể bị chặn bởi bộ lọc).`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+    return { content, usage: data.usageMetadata }
+  }
+
+  private async chatOpenAiCompatible(
+    meta: AiProviderMeta,
+    apiKey: string,
+    model: string,
+    messages: ChatMessageDto[],
+    maxTokens: number,
+    connId: string,
+  ) {
+    // Một số provider (VD: model free của APInex lúc quá tải) thỉnh thoảng trả 200
+    // nhưng nội dung rỗng — glitch thoáng qua, thử lại vài lần trước khi báo lỗi
+    // (trước đây gây cảm giác "lúc được lúc không" rồi nhảy sang provider dự phòng).
+    const maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const res = await fetchTimeout(`${meta.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          max_tokens: maxTokens,
+        }),
+      }, CHAT_TIMEOUT_MS)
+      const text = await res.text()
+      if (!res.ok) throw this.providerError(meta, apiKey, res, text, connId)
+      const data = JSON.parse(text) as {
+        choices?: Array<{ message?: { content?: string } }>
+        usage?: Record<string, unknown>
+      }
+      const content = data.choices?.[0]?.message?.content ?? ''
+      if (content) return { content, usage: data.usage }
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 800))
+      }
+    }
+    throw new HttpException(
+      `${meta.name} không trả về nội dung.`,
+      HttpStatus.BAD_GATEWAY,
+    )
+  }
+
+  private async chatAnthropic(
+    meta: AiProviderMeta,
+    apiKey: string,
+    model: string,
+    messages: ChatMessageDto[],
+    maxTokens: number,
+    connId: string,
+  ) {
+    const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n')
+    const rest = messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({ role: m.role, content: m.content }))
+    const res = await fetchTimeout(`${meta.baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        ...(system ? { system } : {}),
+        messages: rest,
+      }),
+    }, CHAT_TIMEOUT_MS)
+    const text = await res.text()
+    if (!res.ok) throw this.providerError(meta, apiKey, res, text, connId)
+    const data = JSON.parse(text) as {
+      content?: Array<{ type?: string; text?: string }>
+      usage?: Record<string, unknown>
+    }
+    const content =
+      data.content?.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('') ?? ''
+    if (!content) {
+      throw new HttpException(
+        `${meta.name} không trả về nội dung.`,
+        HttpStatus.BAD_GATEWAY,
+      )
+    }
+    return { content, usage: data.usage }
+  }
+}

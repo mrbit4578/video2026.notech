@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <title>VeoGenie Visual Workflow Studio</title>
+    <script>
+      // Browser Shim for Web Deployment (Vercel & Online Browser)
+      if (typeof window !== 'undefined' && !window.__TAURI_INTERNALS__) {
+        window.__TAURI_INTERNALS__ = {
+          invoke: async (cmd, args) => {
+            console.log('[VeoGenie Web Shim] Tauri invoke:', cmd, args);
+            if (cmd === 'get_native_workflow_broker_status') return { ready: true, status: 'online' };
+            if (cmd === 'issue_native_workflow_capability') return { token: 'web-online-token-unlimited' };
+            if (cmd === 'read_local_workflow_media_as_data_url') return '';
+            if (cmd === 'ensure_flow_account_chrome_debug') return { ok: true };
+            if (cmd === 'ensure_dola_account_chrome_debug') return { ok: true };
+            return { ok: true };
+          },
+          transformCallback: (fn) => fn,
+          unregisterCallback: () => {},
+          convertFileSrc: (src) => src,
+        };
+      }
+    </script>
+    <script type="module" crossorigin src="./index-CpS7omih.js"></script>
+    <link rel="stylesheet" crossorigin href="./index-BDu6iyx9.css" />
+  </head>
+  <body class="bg-slate-950 text-slate-100 overflow-hidden">
+    <div id="root"></div>
+  </body>
+</html>

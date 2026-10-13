@@ -1,0 +1,580 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Migrate/deploy dùng direct (non-pooler) connection: advisory lock của Postgres
+// là session-scoped, chạy qua pooler dễ bị kẹt lock từ session cũ → P1002.
+// Xem apps/api/scripts/migrate-with-retry.sh
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// Không lưu email đầy đủ — chỉ hash
+model User {
+  id           String    @id @default(cuid())
+  emailHash    String    @unique
+  displayName  String
+  passwordHash String?   // bcrypt hash — null nếu user chỉ dùng OAuth
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  workspaces  WorkspaceMember[]
+  consents    Consent[]
+
+  @@map("users")
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  plan      String   @default("free") // free | pro | team
+  createdAt DateTime @default(now())
+
+  members     WorkspaceMember[]
+  connections Connection[]
+  aiConnections AiConnection[]
+  chatSessions ChatSession[]
+  videoProjects VideoProject[]
+  contentItems ContentItem[]
+  documents   Document[]
+  entities    Entity[]
+  relations   Relation[]
+  communities Community[]
+  jobs        Job[]
+  renderJobs  RenderJob[]
+  auditLogs   AuditLog[]
+  wooStores   WooStore[]
+  nichePicks  NichePick[]
+  nicheEvidence NicheEvidence[]
+  monetizationOffers MonetizationOffer[]
+  videoEconomics VideoEconomics[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String    @default("member") // owner | admin | member
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+// Token luôn mã hóa — KHÔNG lưu plaintext
+model Connection {
+  id                   String    @id @default(cuid())
+  workspaceId          String
+  provider             String    // google | facebook | instagram | tiktok | github
+  providerUserId       String
+  encryptedAccessToken String    // AES-256-GCM
+  encryptedRefreshToken String?
+  expiresAt            DateTime
+  scopesJson           String[]  // Đúng scope đã được consent
+  status               String    @default("active") // active | reauth_required | revoked | error
+  lastError            String?
+  createdAt            DateTime  @default(now())
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id])
+  jobs         Job[]
+
+  @@unique([workspaceId, provider, providerUserId])
+  @@map("connections")
+}
+
+// Consent PHẢI tồn tại trước khi gọi API bất kỳ
+model Consent {
+  id            String    @id @default(cuid())
+  userId        String
+  provider      String
+  purpose       String
+  scopesJson    String[]
+  policyVersion String    // CURRENT_POLICY_VERSION
+  grantedAt     DateTime  @default(now())
+  revokedAt     DateTime?
+  ipHash        String    // IP hash (không lưu IP đầy đủ)
+
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@map("consents")
+}
+
+// Content item — phải approved trước khi publish
+model ContentItem {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  assetUrl       String?
+  caption        String
+  scheduledAt    DateTime?
+  status         String   @default("draft") // draft | pending_approval | approved | published | failed
+  approvalStatus String   @default("pending") // pending | approved | rejected
+  createdAt      DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  jobs      Job[]
+
+  @@map("content_items")
+}
+
+// Job queue (BullMQ làm scheduler; bảng này là source of truth)
+model Job {
+  id              String   @id @default(cuid())
+  connectionId    String
+  contentItemId   String?
+  idempotencyKey  String   @unique // ngăn duplicate publish
+  attempts        Int      @default(0)
+  status          String   @default("pending") // pending | running | done | failed | dead_letter
+  nextRunAt       DateTime?
+  lastError       String?
+  workspaceId     String
+
+  connection    Connection  @relation(fields: [connectionId], references: [id])
+  contentItem   ContentItem? @relation(fields: [contentItemId], references: [id])
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id])
+
+  @@map("jobs")
+}
+
+// Render job — video render bằng Concat engine headless (không watermark).
+// Hàng đợi serialize ở RenderService (Concat chạy 1 export tại một thời điểm).
+model RenderJob {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  status      String   @default("queued") // queued | running | done | failed | cancelled
+  specJson    String   // JSON của RenderSpec lúc tạo job
+  progress    Float    @default(0) // 0..1 từ event export.progress
+  concatJob   String? // job id của Concat ("j1", "j2", ...) để export.cancel
+  outputPath  String? // file MP4 trên disk của worker
+  error       String?
+  attempts    Int      @default(0) // số lần runJob đã thử (chống lặp vô hạn khi crash-loop như OOM)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, createdAt])
+  @@map("render_jobs")
+}
+
+// API key của các nền tảng AI (Gemini, OpenAI, xAI, Anthropic, DeepSeek)
+// Key LUÔN mã hóa AES-256-GCM — KHÔNG bao giờ trả về client hay log
+model AiConnection {
+  id          String    @id @default(cuid())
+  workspaceId String
+  provider    String    // gemini | openai | xai | anthropic | deepseek | experientiallabs | apmix | muse
+  keyCipher   String    // API key đã mã hóa
+  keyHint     String    // 4 ký tự cuối của key — để user nhận diện
+  status      String    @default("active") // active | invalid
+  validatedAt DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider])
+  @@map("ai_connections")
+}
+
+// ─── Nhật ký chat AI Pro ──────────────────────────────────────────────────
+// Lưu lịch sử chat để user xem lại / xóa tùy ý. metaJson lưu metadata hiển thị
+// (fallback, ragMeta, agentMeta) — KHÔNG bao giờ chứa API key.
+model ChatSession {
+  id          String   @id @default(cuid())
+  workspaceId String
+  provider    String   // provider lúc tạo phiên
+  model       String?  // model lúc tạo phiên
+  mode        String   @default("chat") // chat | agent | rag
+  title       String   // tiêu đề tự sinh từ tin nhắn đầu
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+
+  @@index([workspaceId, updatedAt])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String   // user | assistant | system
+  content   String   @db.Text
+  metaJson  String?  @db.Text // JSON: { provider, model, fallback?, ragMeta?, agentMeta? }
+  createdAt DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
+}
+
+// ─── Video Faceless (pipeline từ tín hiệu viral → sản phẩm gốc) ───────────
+// Spec: docs/faceless-video-system.md
+// Mỗi project là một gói sản phẩm: brief + script + evidence + rights +
+// disclosure + edit + receipt + correction log.
+model VideoProject {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  title          String
+  series         String?  // format series lặp lại, VD "3 phút kiểm chứng"
+  viralSourceUrl String?  // URL video viral THAM KHẢO — chỉ phân tích, không tải
+  sourceNote     String?  @db.Text // phân tích nguồn: chủ đề/hook/claim/format
+  stage          String   @default("intake") // intake|analysis|angle|research|script|assets|voice|edit|qa|publish
+  angle          String?  @db.Text // góc mới đã chọn (qua G0)
+  briefJson      String?  @db.Text // JSON brief từ tool video_brief
+  script         String?  @db.Text // kịch bản đã chốt
+  caption        String?  @db.Text
+  publishNotes   String?  @db.Text // disclosure: affiliate/AI-label/nhạc/nguồn
+  riskScore      Int?
+  riskBreakdown  String?  @db.Text // JSON {c,p,l,a,m,h}
+  gatesJson      String?  @db.Text // JSON {G1:{pass,note},...}
+  complianceJson String?  @db.Text // JSON checklist xuất bản: {aiLabel:{required,applied},commercialDisclosure:{required,applied},musicRights:{status,note}} — playbook chương 09
+  contentItemId  String?  // link sang ContentItem khi gửi sang Content Studio
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assets    VideoAsset[]
+  claims    VideoClaim[]
+  aiEntries VideoAiEntry[]
+  economics VideoEconomics?
+
+  @@index([workspaceId, updatedAt])
+  @@map("video_projects")
+}
+
+// Rights ledger: mỗi asset một dòng, pending/conditional không được publish.
+model VideoAsset {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  assetType   String   // video|image|music|voice|font|template|screenshot|logo
+  sourceUrl   String?
+  owner       String?
+  rightsBasis String   // original|license|public_domain|permission|platform_library|quotation_review
+  scope       String?
+  proof       String?  @db.Text // hợp đồng/email/receipt/license page
+  status      String   @default("pending") // cleared|conditional|pending|reject
+  createdAt   DateTime @default(now())
+
+  project VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("video_assets")
+}
+
+// Claim ledger: mỗi claim có thể kiểm chứng một dòng.
+// Playbook mmo-ai-tiktok-roadmap-v1 chương 06: bảng "phát biểu → nguồn →
+// đoạn căn cứ → hình minh họa". Claim thiếu căn cứ (unverified) bắt buộc
+// ghi "CHƯA XÁC MINH" trong kịch bản — kiểm tra bằng validateClaimMarkers().
+model VideoClaim {
+  id              String   @id @default(cuid())
+  projectId       String
+  claimText       String   @db.Text
+  claimType       String   // fact|interpretation|forecast|allegation|opinion
+  riskLevel       String   // low|medium|high|critical
+  primarySource   String?  @db.Text
+  secondarySource String?  @db.Text
+  evidenceExcerpt String?  @db.Text // đoạn căn cứ: trích dẫn cụ thể từ nguồn hỗ trợ phát biểu
+  sceneRef        String?  // cảnh minh họa liên quan, VD "00:14–00:23"
+  scriptCode      String?  // mã nguồn trong kịch bản, VD "[C1]" — để đối chiếu câu ↔ nguồn
+  confidence      String   // confirmed|probable|disputed|unverified
+  status          String   @default("open") // open|corrected|withdrawn
+  createdAt       DateTime @default(now())
+
+  project VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("video_claims")
+}
+
+// AI register: phân loại A0-A4, A4 không consent mặc định REJECT.
+model VideoAiEntry {
+  id            String   @id @default(cuid())
+  projectId     String
+  assetName     String
+  tool          String
+  inputSource   String?
+  outputUse     String?
+  category      String   // A0|A1|A2|A3|A4
+  realPerson    Boolean  @default(false)
+  labelRequired Boolean  @default(false)
+  labelApplied  Boolean  @default(false)
+  consentStatus String?  // none|obtained|na
+  createdAt     DateTime @default(now())
+
+  project VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("video_ai_entries")
+}
+
+// ─── Kho tri thức RAG ─────────────────────────────────────────────────────
+// Tài liệu do user upload để hỏi AI. Embedding lưu ở cột vector(1536) của
+// pgvector — Prisma không map được kiểu này nên đọc/ghi embedding và cột
+// search (tsvector) CHỈ qua raw SQL. Xem migration 2026092102_rag_vector.
+
+model Document {
+  id          String   @id @default(cuid())
+  workspaceId String
+  title       String
+  sourceType  String   // file | url | text
+  sourceUrl   String?
+  mimeType    String?
+  status      String   @default("processing") // processing | ready | failed
+  chunkCount  Int      @default(0)
+  error       String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  chunks    Chunk[]
+  entities  Entity[]
+
+  @@map("documents")
+  @@index([workspaceId])
+}
+
+model Chunk {
+  id          String   @id @default(cuid())
+  documentId  String
+  workspaceId String
+  content     String
+  modality    String   @default("text") // text | table | image
+  tokenCount  Int?
+  // Kiểu vector của pgvector — chỉ đọc/ghi qua raw SQL, KHÔNG qua Prisma Client.
+  embedding   Unsupported("vector(1536)")?
+  // Namespace provenance của vector (kaizen A01/A03): "embedding-v1:<provider>:<model>:1536".
+  // NULL = vector legacy (loại khỏi dense search, vẫn tìm bằng sparse full-text).
+  embeddingSpace String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("chunks")
+  @@index([workspaceId])
+  @@index([documentId])
+  @@index([workspaceId, embeddingSpace])
+}
+
+// Đồ thị tri thức (GraphRAG) — trích xuất best-effort lúc ingest
+model Entity {
+  id          String   @id @default(cuid())
+  workspaceId String
+  documentId  String?
+  chunkId     String?
+  name        String
+  type        String   // person | org | concept | product | location | ...
+  summary     String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document  Document?  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("entities")
+  @@index([workspaceId])
+}
+
+model Relation {
+  id          String   @id @default(cuid())
+  workspaceId String
+  fromId      String   // Entity.id
+  toId        String   // Entity.id
+  relation    String
+  description String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("relations")
+  @@index([workspaceId])
+}
+
+model Community {
+  id          String   @id @default(cuid())
+  workspaceId String
+  title       String
+  summary     String
+  entityIds   String[]
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("communities")
+  @@index([workspaceId])
+}
+
+// Immutable audit log — KHÔNG chứa secret
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  actorId     String
+  action      String   // consent_granted | token_refreshed | content_published | account_deleted ...
+  provider    String?
+  entityType  String?  // connection | content | oauth | user ...
+  targetId    String?  // id của entity liên quan
+  result      String   // success | failure
+  metadata    String?  // JSON đã sanitize (không secret)
+  ipHash      String?  // hash SHA-256 của IP, không lưu IP đầy đủ
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// Session đăng nhập (express-session) — lưu DB thay vì MemoryStore mặc định.
+// Lý do: Render restart/redeploy là mất hết session trong RAM → toàn bộ user
+// bị "tự động thoát" dù cookie còn hạn. Lưu DB thì session sống sót qua restart.
+// sess là JSON payload của express-session (userId, workspaceId, oauthPending);
+// KHÔNG chứa secret (secret nằm ở cookie signature phía client).
+model Session {
+  sid       String   @id // session id (đã sign ở cookie)
+  sess      String   // JSON payload
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// Cửa hàng WooCommerce đã kết nối (API key, KHÔNG OAuth).
+// Consumer key/secret LUÔN mã hóa bằng TOKEN_ENCRYPTION_KEY — không bao giờ trả ra API.
+model WooStore {
+  id                    String   @id @default(cuid())
+  workspaceId           String
+  storeUrl              String   // https://shopcuaban.com (đã chuẩn hóa, không trailing slash)
+  storeName             String?
+  currency              String?
+  wcVersion             String?
+  encryptedConsumerKey    String   @db.Text
+  encryptedConsumerSecret String @db.Text
+  status                String   @default("connected") // connected | error
+  lastError             String?
+  productCount          Int      @default(0)
+  lastSyncAt            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, storeUrl])
+  @@index([workspaceId])
+  @@map("woo_stores")
+}
+
+// Ngách đã được workspace chọn/dùng — nguyên tắc: đã dùng thì KHÔNG bao giờ
+// đề xuất lặp lại. Dùng cho thuật toán trộn (mixer) + vòng kaizen liên tục.
+model NichePick {
+  id          String   @id @default(cuid())
+  workspaceId String
+  slug        String   // slug_ngach_viet_khong_dau — khóa chống lặp theo workspace
+  label       String   // tên hiển thị, vd "Ngách: Công Cụ AI & SaaS"
+  category    String   @default("niche")
+  score       Int?     // điểm cơ hội lúc được chọn
+  rationale   String?  @db.Text
+  source      String   @default("scan") // scan | manual | ai
+  status      String   @default("picked") // picked | in_progress | done | dropped
+  feedback    String?  @db.Text // kaizen: ghi nhận kết quả sau khi dùng
+  outcome     Int?     // kaizen: -1 (kém) | 0 (trung bình) | 1 (hiệu quả)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, status])
+  @@map("niche_picks")
+}
+
+// ─── MMO playbook (mmo-ai-tiktok-roadmap-v1, chương 01/02) ──────────
+// Bảng ghi bằng chứng ngách: mỗi dòng là một câu hỏi/thông tin THẬT thu
+// thập được. Tách rõ "người xem hỏi" (questionText/url/metricSeen) và
+// "AI suy ra" (metricNotProven/contentIdea/checkResult).
+model NicheEvidence {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  nicheSlug       String   // slug ngách (normalizeSlug) — gom bằng chứng theo ngách
+  collectedAt     DateTime @default(now()) // ngày thu thập
+  market          String?  // thị trường: VN | quốc tế
+  audience        String?  // nhóm người xem
+  questionText    String   @db.Text // câu hỏi nguyên văn
+  url             String?  // URL nguồn công khai
+  metricSeen      String?  // chỉ số nhìn thấy (VD "120k view")
+  metricNotProven String?  @db.Text // điều chỉ số đó CHƯA chứng minh
+  contentIdea     String?  @db.Text // ý tưởng nội dung từ bằng chứng
+  relatedOffer    String?  // sản phẩm/đề nghị mua liên quan
+  checkResult     String?  @db.Text // kết quả kiểm tra (nhu cầu/sản phẩm)
+  createdAt       DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, nicheSlug])
+  @@map("niche_evidence")
+}
+
+// ─── MMO playbook (chương 04): chọn cơ chế thu nhập TRƯỚC khi sản xuất ─
+// Mỗi ngách/dự án gắn một đề nghị mua đã kiểm chứng (không giả định nhu cầu).
+model MonetizationOffer {
+  id                 String   @id @default(cuid())
+  workspaceId        String
+  projectId          String?  // gắn dự án video (nếu có)
+  nicheSlug          String?  // hoặc gắn ngách
+  model              String   // tiktok_shop_affiliate|software_affiliate|digital_product|paid_content|ugc_sponsorship|creator_rewards
+  title              String   // tên đề nghị mua
+  commissionAmount   Int?     // hoa hồng/đơn (đơn vị tiền tệ nhỏ nhất)
+  commissionCurrency String   @default("VND")
+  payoutTerms        String?  @db.Text // kỳ quyết toán, điều kiện ghi công
+  verified           Boolean  @default(false) // đã xác minh: chương trình mở, quốc gia nhận tiền, kỳ trả
+  status             String   @default("candidate") // candidate|active|paused|dropped
+  note               String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@map("monetization_offers")
+}
+
+// ─── MMO playbook (chương 05/09): đo lường hiệu quả từng video ───────
+// Mỗi video một mã số liệu: chi phí → phân phối → chuyển đổi → tiền về.
+// "Thụ động" được đo bằng giờ vận hành/đơn và lợi nhuận sau chi phí.
+model VideoEconomics {
+  id                 String   @id @default(cuid())
+  projectId          String   @unique
+  workspaceId        String
+  costCash           Int      @default(0) // chi phí tiền mặt (VND) cho 1 video được duyệt
+  hoursWorked        Float    @default(0) // số giờ vận hành
+  views              Int      @default(0)
+  watchTimeSec       Int?     // tổng thời gian xem (giây)
+  completionRate     Float?   // tỷ lệ xem hết 0..1
+  saves              Int      @default(0)
+  shares             Int      @default(0)
+  clicks             Int      @default(0) // lượt nhấp liên kết
+  orders             Int      @default(0) // đơn đặt
+  eligibleOrders     Int      @default(0) // đơn đủ điều kiện quyết toán
+  commissionReceived Int      @default(0) // hoa hồng THỰC NHẬN (VND) — lấy từ sổ quyết toán, không suy từ view
+  organic            Boolean  @default(true)
+  postedAt           DateTime?
+  utm                String?  // UTM campaign — hỗ trợ theo dõi, không thay ghi công TikTok Shop
+  note               String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  project   VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("video_economics")
+}
