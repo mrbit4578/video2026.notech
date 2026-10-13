@@ -26,6 +26,7 @@ import {
 import { InteractiveKnowledgeGraph } from '../components/InteractiveKnowledgeGraph'
 import { AutoEarningWizard } from '../components/AutoEarningWizard'
 import { TinyFishSearchBadge } from '../components/TinyFishSearchBadge'
+import { VeoGenieMindmapGuide } from '../components/VeoGenieMindmapGuide'
 import { useSession } from '../context/SessionContext'
 import { useConnections } from '../lib/hooks'
 
@@ -205,6 +206,9 @@ export default function HomePage() {
           </p>
         )}
       </div>
+
+      {/* VeoGenie Visual Studio Operations Mindmap Guide (A-Z) */}
+      <VeoGenieMindmapGuide />
 
       {/* Core Auto-Pilot Earning Wizard (A-Z) */}
       <AutoEarningWizard />
