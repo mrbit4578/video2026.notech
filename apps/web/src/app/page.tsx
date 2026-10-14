@@ -24,6 +24,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import { InteractiveKnowledgeGraph } from '../components/InteractiveKnowledgeGraph'
+import { ClientErrorBoundary } from '../components/ClientErrorBoundary'
 import { AutoEarningWizard } from '../components/AutoEarningWizard'
 import { TinyFishSearchBadge } from '../components/TinyFishSearchBadge'
 import { VeoGenieMindmapGuide } from '../components/VeoGenieMindmapGuide'
@@ -234,7 +235,9 @@ export default function HomePage() {
           </Link>
         </div>
 
-        <InteractiveKnowledgeGraph />
+        <ClientErrorBoundary fallbackTitle="Bản Đồ Mạng Lưới Kiếm Tiền (Knowledge Graph)">
+          <InteractiveKnowledgeGraph />
+        </ClientErrorBoundary>
       </div>
 
       {/* Two Columns: Revenue by Channel & Quick AI Creative Triggers */}

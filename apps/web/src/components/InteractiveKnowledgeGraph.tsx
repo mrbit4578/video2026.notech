@@ -308,6 +308,14 @@ function buildNodePrompt(node: GraphNode | null): string {
   return lines.join('\n')
 }
 
+/** Slug chuẩn của node — khớp logic chống lặp phía backend. */
+export function nodeSlug(n: GraphNode | null | undefined): string {
+  if (!n) return ''
+  const m = /^ai_niche_(.+)$/.exec(n.id || '')
+  if (m && m[1] && !/^scan\d+_\d+$/.test(m[1])) return m[1]
+  return slugifyNiche(n.label || '')
+}
+
 export function InteractiveKnowledgeGraph() {
   const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -356,6 +364,7 @@ export function InteractiveKnowledgeGraph() {
   // Ngách đã dùng — nguyên tắc: đã dùng thì không bao giờ đề xuất lại
   const [usedNiches, setUsedNiches] = useState<UsedNiche[]>([])
   const usedSlugs = new Set(usedNiches.map((u) => u.slug))
+  const isNodeUsed = (n: GraphNode | null): boolean => !!n && usedSlugs.has(nodeSlug(n))
   const [markingUsed, setMarkingUsed] = useState(false)
 
   // Nạp danh sách đã dùng lúc mở trang (để loại trừ tuyệt đối không hiển thị lại)
@@ -533,14 +542,6 @@ export function InteractiveKnowledgeGraph() {
       setScanning(false)
     }
   }
-
-  /** Slug chuẩn của node — khớp logic chống lặp phía backend. */
-  const nodeSlug = (n: GraphNode): string => {
-    const m = /^ai_niche_(.+)$/.exec(n.id)
-    if (m && m[1] && !/^scan\d+_\d+$/.test(m[1])) return m[1]
-    return slugifyNiche(n.label)
-  }
-  const isNodeUsed = (n: GraphNode | null): boolean => !!n && usedSlugs.has(nodeSlug(n))
 
   /**
    * Chọn ngách = đánh dấu đã dùng (không còn là ưu tiên, không đề xuất lại)
@@ -733,11 +734,17 @@ export function InteractiveKnowledgeGraph() {
 
   // Initialize node positions (loại bỏ hoàn toàn các ngách đã dùng khỏi lượt chạy)
   useEffect(() => {
-    const list = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('orh_used_niches_v2') || '[]') : []
-    const slugs = new Set(list.map((u: any) => u.slug))
+    let list: any[] = []
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('orh_used_niches_v2') : null
+      const parsed = raw ? JSON.parse(raw) : []
+      if (Array.isArray(parsed)) list = parsed
+    } catch {}
+    const slugs = new Set(list.map((u: any) => u?.slug).filter(Boolean))
     const availableDefaults = DEFAULT_NODES.filter((n) => !slugs.has(nodeSlug(n)))
+    const len = Math.max(availableDefaults.length, 1)
     const initializedNodes = availableDefaults.map((n, i) => {
-      const angle = (i / availableDefaults.length) * 2 * Math.PI
+      const angle = (i / len) * 2 * Math.PI
       const radius = 140 + (i % 3) * 60
       return {
         ...n,

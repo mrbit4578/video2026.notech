@@ -889,7 +889,8 @@ function getLocalUsedNiches(): UsedNiche[] {
   if (typeof window === 'undefined') return []
   try {
     const raw = localStorage.getItem(USED_NICHES_KEY)
-    return raw ? JSON.parse(raw) : []
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
   }
