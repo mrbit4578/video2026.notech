@@ -207,7 +207,46 @@ export function VideoGenStudio({
     api
       .get<ProviderInfo[]>('/videogen/providers')
       .then(setProviders)
-      .catch((err) => setStatus({ kind: 'err', msg: toMessage(err) }))
+      .catch((err) => {
+        console.warn('Videogen providers fetch fallback:', err)
+        setProviders([
+          {
+            id: 'pollinations',
+            name: 'Pollinations.ai (Miễn phí)',
+            connected: true,
+            keyHint: 'miễn phí · không cần key',
+            capabilities: ['image'],
+          },
+          {
+            id: 'edge',
+            name: 'Edge TTS (Miễn phí)',
+            connected: true,
+            keyHint: 'miễn phí · không cần key',
+            capabilities: ['voice'],
+          },
+          {
+            id: 'utim',
+            name: 'UTIM Agent',
+            connected: true,
+            keyHint: 'model miễn phí',
+            capabilities: ['chat'],
+          },
+          {
+            id: 'gemini',
+            name: 'Google Gemini',
+            connected: false,
+            keyHint: null,
+            capabilities: ['chat', 'image', 'voice', 'video'],
+          },
+          {
+            id: 'openai',
+            name: 'ChatGPT (OpenAI)',
+            connected: false,
+            keyHint: null,
+            capabilities: ['chat', 'image', 'voice', 'video'],
+          },
+        ])
+      })
   }, [])
 
   const say = (kind: 'ok' | 'err' | '', msg: string) => setStatus({ kind, msg })
