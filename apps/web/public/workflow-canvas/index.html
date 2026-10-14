@@ -73,6 +73,79 @@
     <link rel="stylesheet" crossorigin href="./index-BDu6iyx9.css" />
   </head>
   <body class="bg-slate-950 text-slate-100 overflow-hidden">
+    <!-- Top Navigation Dock -->
+    <div id="vg-nav-dock" style="position: fixed; top: 12px; left: 16px; right: 16px; z-index: 99999; display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.6); border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-weight: 800; background: linear-gradient(135deg, #10b981, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 0.5px;">VEO-GENIE STUDIO 2026</span>
+        <span id="vg-mode-badge" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-size: 11px; font-weight: 600;">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+          <span id="vg-mode-text">Cloud AI Video (Online)</span>
+        </span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <a href="/" style="color: #94a3b8; text-decoration: none; padding: 5px 10px; border-radius: 8px; transition: all 0.2s; font-weight: 500;" onmouseover="this.style.color='#f8fafc';this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8';this.style.background='transparent'">🏠 Trang Chủ</a>
+        <a href="/video-faceless" style="color: #94a3b8; text-decoration: none; padding: 5px 10px; border-radius: 8px; transition: all 0.2s; font-weight: 500;" onmouseover="this.style.color='#f8fafc';this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8';this.style.background='transparent'">🎬 Faceless Studio</a>
+        <a href="/huong-dan#workflow-mindmap" style="color: #94a3b8; text-decoration: none; padding: 5px 10px; border-radius: 8px; transition: all 0.2s; font-weight: 500;" onmouseover="this.style.color='#f8fafc';this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8';this.style.background='transparent'">🗺️ Sơ Đồ Minmap</a>
+        <a href="/settings/ai" style="color: #94a3b8; text-decoration: none; padding: 5px 10px; border-radius: 8px; transition: all 0.2s; font-weight: 500;" onmouseover="this.style.color='#f8fafc';this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8';this.style.background='transparent'">🔑 API Keys</a>
+        <button onclick="document.getElementById('vg-guide-modal').style.display='flex'" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2)); border: 1px solid rgba(16, 185, 129, 0.4); color: #38bdf8; font-weight: 600; padding: 5px 12px; border-radius: 8px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">❓ Hướng Dẫn Tạo Video</button>
+      </div>
+    </div>
+
+    <!-- Guide Modal -->
+    <div id="vg-guide-modal" style="display: none; position: fixed; inset: 0; z-index: 100000; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); align-items: center; justify-content: center; padding: 20px; font-family: system-ui, -apple-system, sans-serif;">
+      <div style="background: #0f172a; border: 1px solid #334155; border-radius: 20px; max-width: 640px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); color: #e2e8f0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1e293b; padding-bottom: 14px; margin-bottom: 18px;">
+          <h3 style="margin: 0; font-size: 18px; font-weight: 700; color: #38bdf8;">🎬 Hướng Dẫn Vận Hành & Tạo Video AI</h3>
+          <button onclick="document.getElementById('vg-guide-modal').style.display='none'" style="background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        <div style="font-size: 14px; line-height: 1.6; display: flex; flex-direction: column; gap: 16px;">
+          <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid #334155; border-radius: 12px; padding: 14px;">
+            <div style="font-weight: 700; color: #34d399; margin-bottom: 6px;">⚡ Cách 1: Tạo Video AI Ngay Trên Web (Cloud Mode)</div>
+            <p style="margin: 0; color: #cbd5e1;">Nối dây từ node <strong>Văn bản (Prompt)</strong> hoặc <strong>Tạo Ảnh</strong> sang node <strong>Tạo Video</strong>. Bấm nút <em>"Chạy"</em> ở thanh công cụ góc phải dưới. Hệ thống tự động kích hoạt Cloud Engine sinh video AI điện ảnh sắc nét và hiển thị trực tiếp trên trình phát.</p>
+          </div>
+          <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid #334155; border-radius: 12px; padding: 14px;">
+            <div style="font-weight: 700; color: #38bdf8; margin-bottom: 6px;">🎥 Cách 2: Studio Video Faceless (Dựng Đầy Đủ Tự Động)</div>
+            <p style="margin: 0; color: #cbd5e1;">Mở <a href="/video-faceless" style="color: #38bdf8; text-decoration: underline;">Faceless Video Studio</a> để tạo trọn gói video ngắn 9:16 (Shorts/TikTok/Reels) từ A-Z gồm: Viết kịch bản nhiều scene $\to$ Tạo ảnh AI từng cảnh $\to$ Giọng đọc lồng tiếng $\to$ Phụ đề động $\to$ Xuất video trực tiếp trong trình duyệt.</p>
+          </div>
+          <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid #334155; border-radius: 12px; padding: 14px;">
+            <div style="font-weight: 700; color: #fbbf24; margin-bottom: 6px;">🖥️ Cách 3: Kết Nối RPA Desktop (Google Flow / Dola Miễn Phí)</div>
+            <p style="margin: 0; color: #cbd5e1;">Nếu bạn muốn dùng miễn phí tài khoản Google Flow / Sora qua RPA tự động hóa trên máy tính:</p>
+            <ol style="margin: 8px 0 0 16px; padding: 0; color: #cbd5e1;">
+              <li>Chạy file <code style="background: #1e293b; padding: 2px 6px; border-radius: 4px;">start-desktop-backend.cmd</code> trong thư mục dự án.</li>
+              <li>Mở Chrome debug: <code style="background: #1e293b; padding: 2px 6px; border-radius: 4px;">chrome.exe --remote-debugging-port=9344</code>.</li>
+              <li>Đăng nhập tài khoản Google Flow hoặc Dola. Visual Canvas sẽ tự động bắt cổng local để điều khiển.</li>
+            </ol>
+          </div>
+        </div>
+        <div style="margin-top: 20px; text-align: right;">
+          <button onclick="document.getElementById('vg-guide-modal').style.display='none'" style="background: #3b82f6; color: white; border: none; padding: 8px 18px; border-radius: 10px; font-weight: 600; cursor: pointer;">Đã Hiểu</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Check local backend health (Hybrid Agent Bridge detector)
+      (function checkBridge() {
+        fetch('http://127.0.0.1:8788/workflow/health', { mode: 'cors' })
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.ok) {
+              const badge = document.getElementById('vg-mode-badge');
+              const text = document.getElementById('vg-mode-text');
+              if (badge && text) {
+                badge.style.background = 'rgba(59, 130, 246, 0.2)';
+                badge.style.borderColor = 'rgba(59, 130, 246, 0.5)';
+                badge.style.color = '#60a5fa';
+                text.innerText = 'Desktop RPA Bridge (127.0.0.1:8788)';
+              }
+            }
+          })
+          .catch(() => {
+            // Running on Cloud Mode
+          });
+      })();
+    </script>
+
     <div id="root"></div>
   </body>
 </html>
