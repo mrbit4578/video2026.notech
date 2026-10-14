@@ -116,11 +116,13 @@ export default function VideoFacelessPage() {
 function VideoFacelessInner() {
   const searchParams = useSearchParams()
   const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('project'))
-  // Mở thẳng Studio (từ AI Copilot "Tạo Video Faceless"): ?studio=1&provider=...
-  const [studio, setStudio] = useState(() => searchParams.get('studio') === '1')
+  // Mở thẳng Studio (từ AI Copilot hoặc mapping ngách): ?studio=1 hoặc ?template=1
+  const [studio, setStudio] = useState(() => searchParams.get('studio') === '1' || searchParams.get('template') === '1')
   const [studioProvider, setStudioProvider] = useState<string | null>(() =>
     searchParams.get('provider'),
   )
+  const focusTemplate = searchParams.get('template') === '1'
+  const initialTopic = searchParams.get('topic') || undefined
   // Mở thẳng tab trong chi tiết dự án (mapping từ trang ngách): ?project=<id>&tab=script
   const [initialTab] = useState(() => searchParams.get('tab'))
   if (selectedId && !studio)
@@ -130,6 +132,8 @@ function VideoFacelessInner() {
       <VideoGenStudio
         initialProvider={studioProvider}
         projectId={selectedId}
+        focusWorkflowTemplate={focusTemplate}
+        initialTopic={initialTopic}
         onBack={() => {
           setStudio(false)
           setStudioProvider(null)

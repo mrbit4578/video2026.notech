@@ -90,6 +90,7 @@ export function VideoGenStudio({
   initialTopic,
   initialTitle,
   sourceScript,
+  focusWorkflowTemplate,
 }: {
   onBack: () => void
   onCreatedProject?: (id: string) => void
@@ -104,6 +105,8 @@ export function VideoGenStudio({
   initialTitle?: string
   /** Kịch bản nguồn từ pipeline (đã duyệt) — mapping qua để AI bám sát viết scene */
   sourceScript?: string
+  /** Tự động mở và scroll tới Workflow templates */
+  focusWorkflowTemplate?: boolean
 }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([])
   // Key cho từng bước — tick chọn riêng, không mặc định cứng Gemini nữa.
@@ -177,8 +180,23 @@ export function VideoGenStudio({
 
   // Workflow templates (giọng đọc)
   const [tplOpen, setTplOpen] = useState(true)
-  const [tplText, setTplText] = useState('')
-  const [tplTouched, setTplTouched] = useState(false)
+  const [tplText, setTplText] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const mapped = localStorage.getItem('videogen_mapped_script')
+        if (mapped) return mapped
+      } catch {}
+    }
+    return ''
+  })
+  const [tplTouched, setTplTouched] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return !!localStorage.getItem('videogen_mapped_script')
+      } catch {}
+    }
+    return false
+  })
   const [tplProvider, setTplProvider] = useState('edge')
   const [tplVoice, setTplVoice] = useState('')
   const [tplLoading, setTplLoading] = useState(false)
@@ -250,6 +268,31 @@ export function VideoGenStudio({
   }, [])
 
   const say = (kind: 'ok' | 'err' | '', msg: string) => setStatus({ kind, msg })
+
+  // Tự động cuộn tới Workflow templates và nạp dữ liệu khi được mapping từ Bản Đồ Tri Thức
+  useEffect(() => {
+    const hasMapped = typeof window !== 'undefined' && !!localStorage.getItem('videogen_mapped_script')
+    if (focusWorkflowTemplate || hasMapped) {
+      setTplOpen(true)
+      const mappedTopic = typeof window !== 'undefined' ? localStorage.getItem('videogen_mapped_topic') : null
+      if (mappedTopic && !topic) {
+        setTopic(mappedTopic)
+        if (!title) setTitle(mappedTopic)
+      }
+      setTimeout(() => {
+        const el = document.getElementById('studio-workflow-templates')
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 150)
+      say('ok', 'Đã mapping kịch bản & phân tích chuyên sâu sang màn hình ⚡ Workflow templates!')
+      try {
+        localStorage.removeItem('videogen_mapped_script')
+        localStorage.removeItem('videogen_mapped_topic')
+      } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusWorkflowTemplate])
 
   const providerOptions = (cap: 'chat' | 'image' | 'voice' | 'video') => (
     <>
@@ -822,10 +865,17 @@ export function VideoGenStudio({
       </div>
 
       {/* Workflow templates — phím tắt giọng đọc */}
-      <section className="p-4 rounded-2xl bg-dark-900/60 border border-dark-700">
+      <section id="studio-workflow-templates" className="p-4 rounded-2xl bg-dark-900/60 border border-dark-700 scroll-mt-6">
         <button onClick={() => setTplOpen(!tplOpen)} className="w-full flex items-start justify-between gap-3 text-left">
           <span>
-            <span className="block text-sm font-bold text-white">⚡ Workflow templates</span>
+            <span className="block text-sm font-bold text-white flex items-center gap-2">
+              ⚡ Workflow templates
+              {focusWorkflowTemplate && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-brand-emerald/20 text-brand-emerald border border-brand-emerald/40 animate-pulse">
+                  ĐÃ MAPPING TỪ BẢN ĐỒ TRI THỨC
+                </span>
+              )}
+            </span>
             <span className="block text-[11px] text-slate-500 mt-0.5">
               Phím tắt workflow giọng đọc — chạy ngay không cần đi từng bước.
             </span>

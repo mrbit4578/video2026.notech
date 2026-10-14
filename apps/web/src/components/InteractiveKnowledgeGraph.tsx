@@ -358,16 +358,24 @@ export function InteractiveKnowledgeGraph() {
   const usedSlugs = new Set(usedNiches.map((u) => u.slug))
   const [markingUsed, setMarkingUsed] = useState(false)
 
-  // Nạp danh sách đã dùng lúc mở trang (để loại trừ + gắn badge)
+  // Nạp danh sách đã dùng lúc mở trang (để loại trừ tuyệt đối không hiển thị lại)
   useEffect(() => {
     fetchUsedNiches()
-      .then(setUsedNiches)
+      .then((list) => {
+        setUsedNiches(list)
+        const slugs = new Set(list.map((u) => u.slug))
+        setNodes((prev) => prev.filter((n) => !slugs.has(nodeSlug(n))))
+        setSelectedNode((prev) => (prev && slugs.has(nodeSlug(prev)) ? null : prev))
+      })
       .catch(() => {
-        /* backend cũ chưa có API — quét vẫn chạy, chỉ thiếu chống lặp */
+        /* fallback đã có trong fetchUsedNiches qua localStorage */
       })
   }, [])
 
-  const aiNodes = nodes.filter((n) => n.aiGenerated).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+  // Chỉ hiển thị các ngách AI CHƯA TỪNG ĐƯỢC CHỌN (loại bỏ hoàn toàn ngách đã dùng)
+  const aiNodes = nodes
+    .filter((n) => n.aiGenerated && !usedSlugs.has(nodeSlug(n)))
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
   const requireProvider = (): string | null => {
     if (providerId) return providerId
@@ -544,12 +552,13 @@ export function InteractiveKnowledgeGraph() {
     if (markingUsed || backfilling) return
     setMarkingUsed(true)
     try {
+      const pickedSlug = nodeSlug(n)
       const visibleSlugs = nodes.filter((x) => x.aiGenerated).map((x) => nodeSlug(x))
       let backfill: MixedNiche | null = null
       setBackfilling(true)
       try {
         const res = await replaceNiche({
-          pickedSlug: nodeSlug(n),
+          pickedSlug,
           pickedLabel: n.label,
           pickedCategory: n.category,
           pickedScore: n.score,
@@ -561,7 +570,7 @@ export function InteractiveKnowledgeGraph() {
       } catch {
         // Backend cũ chưa có /niches/replace — fallback: chỉ đánh dấu đã dùng
         await markNicheUsed({
-          slug: nodeSlug(n),
+          slug: pickedSlug,
           label: n.label,
           category: n.category,
           score: n.score,
@@ -571,23 +580,44 @@ export function InteractiveKnowledgeGraph() {
       } finally {
         setBackfilling(false)
       }
-      setUsedNiches(await fetchUsedNiches())
+
+      const updatedUsed = await fetchUsedNiches()
+      setUsedNiches(updatedUsed)
+      const updatedUsedSlugs = new Set(updatedUsed.map((u) => u.slug))
       setStep('human', { status: 'done', detail: `Đã chọn: ${n.label}` })
+
+      let nextSelected: GraphNode | null = null
+      let backfillNode: GraphNode | null = null
       if (backfill) {
         const node = toAiNode(backfill as AiNicheSuggestion, 0, 1)
-        if (node) {
+        if (node && !updatedUsedSlugs.has(nodeSlug(node))) {
           if (typeof backfill.mixScore === 'number')
             node.score = Math.max(0, Math.min(100, Math.round(backfill.mixScore)))
           node.isBackfill = true
-          // Đặt cạnh ngách vừa chọn để thấy rõ sự thay thế
           node.x = (n.x ?? 400) + 130
           node.y = (n.y ?? 260) - 90
-          setNodes((prev) => [...prev, node])
-          setLinks((prev) => [...prev, { source: node.id, target: n.id, label: 'Thay thế' }])
-          setSelectedNode(node)
+          backfillNode = node
+          nextSelected = node
         }
-      } else if (poolRef.current.length > 0) {
-        setScanError('Đã chọn ngách nhưng pool dự phòng đã cạn — hãy bấm "AI Quét Ngách Tối Ưu" để bổ sung.')
+      }
+
+      // Xóa hoàn toàn ngách đã chọn khỏi danh sách nodes đang hiển thị
+      setNodes((prev) => {
+        const remaining = prev.filter((x) => nodeSlug(x) !== pickedSlug && !updatedUsedSlugs.has(nodeSlug(x)))
+        if (!nextSelected && remaining.length > 0) {
+          nextSelected = remaining[0]
+        }
+        return backfillNode ? [...remaining, backfillNode] : remaining
+      })
+
+      if (nextSelected) {
+        setSelectedNode(nextSelected)
+      } else {
+        setSelectedNode(null)
+      }
+
+      if (!backfill && poolRef.current.length > 0) {
+        setScanNotice('Đã chọn ngách. Bấm "AI Quét Ngách Tối Ưu" bất cứ lúc nào để bổ sung các ngách mới.')
       }
     } catch {
       setScanError('Không lưu được trạng thái đã dùng. Hãy thử lại.')
@@ -596,23 +626,42 @@ export function InteractiveKnowledgeGraph() {
     }
   }
 
-  /** Giữ tên cũ cho các chỗ gọi hiện tại — thực chất là chọn + backfill. */
+  /** Giữ tên cũ cho các chỗ gọi hiện tại — thực chất là chọn + loại bỏ khỏi biểu đồ + backfill. */
   const handleMarkUsed = handlePickNiche
 
   const handleUnmarkUsed = async (n: GraphNode) => {
     try {
       await unmarkNicheUsed(nodeSlug(n))
-      setUsedNiches(await fetchUsedNiches())
+      const list = await fetchUsedNiches()
+      setUsedNiches(list)
     } catch {
       setScanError('Không bỏ đánh dấu được. Hãy thử lại.')
     }
   }
 
-  /** Click "Dùng Copilot tạo kịch bản" = chọn ngách → đánh dấu đã dùng + backfill ngách mới. */
-  const handleCopilotClick = (n: GraphNode | null) => {
-    if (!n || isNodeUsed(n)) return
-    // Không chặn điều hướng sang Copilot: chạy chọn + backfill nền
-    handlePickNiche(n).catch(() => {})
+  /** Mapping phân tích chuyên sâu & kịch bản sang màn hình ⚡ Workflow templates trong Video Faceless Studio */
+  const handleMapToWorkflowTemplate = async (n: GraphNode | null) => {
+    if (!n) return
+    // Lấy nội dung phân tích chuyên sâu (nếu đã chạy xong) hoặc kịch bản chi tiết của node
+    const textToMap = (aiInsight && aiInsightFor === n.id)
+      ? aiInsight
+      : `[Kịch Bản & Chiến Lược Ngách: ${n.label}]\n\n• Phân Tích: Đang tăng trưởng mạnh trong thị trường MMO 2026.\n• Chiến Lược Traffic: ${n.details?.trafficStrategy || 'Làm video ngắn demo tự động hóa chốt đơn 1 click trên TikTok & Reels'}\n• Mô Hình Khuyến Nghị: ${n.details?.recommendedModel || 'Gemini 2.5 Flash'}\n• Lưu Ý ToS: ${n.details?.tosCaution || 'Minh bạch nội dung affiliate'}`
+
+    // Đánh dấu ngách đã dùng để các lượt sau không hiển thị nữa
+    try {
+      await handlePickNiche(n)
+    } catch {}
+
+    // Lưu vào localStorage để màn hình Workflow templates tự động prefill
+    try {
+      localStorage.setItem('videogen_mapped_script', textToMap)
+      localStorage.setItem('videogen_mapped_topic', n.label)
+      localStorage.setItem('videogen_mapped_source', 'knowledge_graph')
+    } catch {}
+
+    // Điều hướng trực tiếp sang Video Faceless Studio tại màn hình Workflow templates
+    const prov = providerId || 'utim'
+    router.push(`/video-faceless?studio=1&template=1&topic=${encodeURIComponent(n.label)}&provider=${encodeURIComponent(prov)}`)
   }
 
   /** Mapping ngách → Video Faceless: tạo dự án từ node đang chọn rồi mở thẳng
@@ -682,10 +731,13 @@ export function InteractiveKnowledgeGraph() {
     setAiInsightFor(null)
   }, [selectedNode?.id])
 
-  // Initialize node positions
+  // Initialize node positions (loại bỏ hoàn toàn các ngách đã dùng khỏi lượt chạy)
   useEffect(() => {
-    const initializedNodes = DEFAULT_NODES.map((n, i) => {
-      const angle = (i / DEFAULT_NODES.length) * 2 * Math.PI
+    const list = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('orh_used_niches_v2') || '[]') : []
+    const slugs = new Set(list.map((u: any) => u.slug))
+    const availableDefaults = DEFAULT_NODES.filter((n) => !slugs.has(nodeSlug(n)))
+    const initializedNodes = availableDefaults.map((n, i) => {
+      const angle = (i / availableDefaults.length) * 2 * Math.PI
       const radius = 140 + (i % 3) * 60
       return {
         ...n,
@@ -696,6 +748,9 @@ export function InteractiveKnowledgeGraph() {
       }
     })
     setNodes(initializedNodes)
+    if (initializedNodes.length > 0) {
+      setSelectedNode(initializedNodes[0])
+    }
   }, [])
 
   // Animation Loop with simple force layout
@@ -715,12 +770,14 @@ export function InteractiveKnowledgeGraph() {
       ctx.scale(zoomLevel, zoomLevel)
       ctx.translate(-canvas.width / 2, -canvas.height / 2)
 
-      // Draw Links
+      // Draw Links (ẩn các link của ngách đã dùng)
       links.forEach((link) => {
         const sourceNode = nodes.find((n) => n.id === link.source)
         const targetNode = nodes.find((n) => n.id === link.target)
 
         if (sourceNode && targetNode && sourceNode.x && sourceNode.y && targetNode.x && targetNode.y) {
+          if (usedSlugs.has(nodeSlug(sourceNode)) || usedSlugs.has(nodeSlug(targetNode))) return
+
           ctx.beginPath()
           ctx.moveTo(sourceNode.x, sourceNode.y)
           ctx.lineTo(targetNode.x, targetNode.y)
@@ -739,15 +796,13 @@ export function InteractiveKnowledgeGraph() {
         }
       })
 
-      // Draw Nodes
+      // Draw Nodes (hoàn toàn ẩn ngách đã dùng)
       nodes.forEach((node) => {
         if (!node.x || !node.y) return
+        if (usedSlugs.has(nodeSlug(node))) return
 
         const isFilteredOut = selectedCategory !== 'all' && node.category !== selectedCategory
         const isSelected = selectedNode?.id === node.id
-        // Ngách đã dùng: làm mờ — không còn là ưu tiên
-        const nodeUsed = usedSlugs.has(nodeSlug(node))
-        ctx.globalAlpha = nodeUsed ? 0.4 : 1
 
         // Node circle glow
         if (isSelected) {
@@ -838,6 +893,7 @@ export function InteractiveKnowledgeGraph() {
     // Find clicked node
     const found = nodes.find((n) => {
       if (!n.x || !n.y) return false
+      if (usedSlugs.has(nodeSlug(n))) return false
       const dist = Math.sqrt((n.x - clickX) ** 2 + (n.y - clickY) ** 2)
       return dist <= n.val + 5
     })
@@ -1202,14 +1258,15 @@ export function InteractiveKnowledgeGraph() {
                 {aiInsight}
               </div>
             )}
-            <a
-              href={copilotUrl}
-              onClick={() => handleCopilotClick(selectedNode)}
-              className="w-full py-2.5 px-4 rounded-lg bg-gradient-to-r from-brand-emerald to-brand-cyan text-dark-950 font-bold text-xs flex items-center justify-center gap-2 hover:opacity-95 shadow-glow-emerald transition-all"
+            <button
+              type="button"
+              onClick={() => handleMapToWorkflowTemplate(selectedNode)}
+              disabled={!selectedNode}
+              className="w-full py-2.5 px-4 rounded-lg bg-gradient-to-r from-brand-emerald to-brand-cyan text-dark-950 font-bold text-xs flex items-center justify-center gap-2 hover:opacity-95 shadow-glow-emerald transition-all disabled:opacity-50"
             >
               <span>Dùng AI Copilot Tạo Kịch Bản Cho Node Này</span>
               <ArrowUpRight className="w-4 h-4" />
-            </a>
+            </button>
             <button
               onClick={() => handleCreateVideoProject(selectedNode)}
               disabled={creatingVideo || !selectedNode}

@@ -883,12 +883,44 @@ export interface MixResult {
   rejected: Array<{ candidate: unknown; reason: string; reasonDetail: string }>
 }
 
-/** Danh sách ngách đã dùng — để loại trừ khi quét. */
-export async function fetchUsedNiches(): Promise<UsedNiche[]> {
-  return api.get<UsedNiche[]>('/niches/used')
+const USED_NICHES_KEY = 'orh_used_niches_v2'
+
+function getLocalUsedNiches(): UsedNiche[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(USED_NICHES_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
 }
 
-/** Đánh dấu ngách đã chọn/dùng — từ đó không bao giờ đề xuất lại. */
+function saveLocalUsedNiches(list: UsedNiche[]) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(USED_NICHES_KEY, JSON.stringify(list))
+  } catch {}
+}
+
+/** Danh sách ngách đã dùng — kết hợp API và localStorage để chống lặp tuyệt đối qua các lượt chạy */
+export async function fetchUsedNiches(): Promise<UsedNiche[]> {
+  const local = getLocalUsedNiches()
+  try {
+    const remote = await api.get<UsedNiche[]>('/niches/used')
+    const map = new Map<string, UsedNiche>()
+    local.forEach((u) => map.set(u.slug, u))
+    if (Array.isArray(remote)) {
+      remote.forEach((u) => map.set(u.slug, u))
+    }
+    const merged = Array.from(map.values())
+    saveLocalUsedNiches(merged)
+    return merged
+  } catch {
+    return local
+  }
+}
+
+/** Đánh dấu ngách đã chọn/dùng — từ đó không bao giờ đề xuất lại */
 export async function markNicheUsed(body: {
   slug: string
   label: string
@@ -897,12 +929,33 @@ export async function markNicheUsed(body: {
   rationale?: string
   source?: string
 }): Promise<UsedNiche> {
-  return api.post<UsedNiche>('/niches/used', body)
+  const localItem: UsedNiche = {
+    slug: body.slug,
+    label: body.label,
+    category: body.category || 'niche',
+    status: 'used',
+  }
+  const local = getLocalUsedNiches()
+  if (!local.some((x) => x.slug === body.slug)) {
+    local.unshift(localItem)
+    saveLocalUsedNiches(local)
+  }
+  try {
+    return await api.post<UsedNiche>('/niches/used', body)
+  } catch {
+    return localItem
+  }
 }
 
-/** Bỏ đánh dấu — cho phép đề xuất lại nếu đổi ý. */
+/** Bỏ đánh dấu — cho phép đề xuất lại nếu đổi ý */
 export async function unmarkNicheUsed(slug: string): Promise<{ ok: boolean }> {
-  return api.del<{ ok: boolean }>(`/niches/used/${encodeURIComponent(slug)}`)
+  const local = getLocalUsedNiches().filter((x) => x.slug !== slug)
+  saveLocalUsedNiches(local)
+  try {
+    return await api.del<{ ok: boolean }>(`/niches/used/${encodeURIComponent(slug)}`)
+  } catch {
+    return { ok: true }
+  }
 }
 
 /** Ghi nhận kết quả dùng ngách (kaizen). */
