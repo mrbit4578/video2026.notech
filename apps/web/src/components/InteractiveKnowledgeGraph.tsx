@@ -373,13 +373,33 @@ export function InteractiveKnowledgeGraph() {
       .then((list) => {
         setUsedNiches(list)
         const slugs = new Set(list.map((u) => u.slug))
-        setNodes((prev) => prev.filter((n) => !slugs.has(nodeSlug(n))))
-        setSelectedNode((prev) => (prev && slugs.has(nodeSlug(prev)) ? null : prev))
+        setNodes((prev) => {
+          const remaining = prev.filter((n) => !slugs.has(nodeSlug(n)))
+          setSelectedNode((current) => {
+            if (!current || slugs.has(nodeSlug(current))) {
+              return remaining.length > 0 ? remaining[0] : null
+            }
+            return current
+          })
+          return remaining
+        })
       })
       .catch(() => {
         /* fallback đã có trong fetchUsedNiches qua localStorage */
       })
   }, [])
+
+  // Đảm bảo luôn tự động chọn node khả dụng nếu node hiện tại bị null hoặc đã dùng
+  useEffect(() => {
+    if (nodes.length > 0) {
+      if (!selectedNode || usedSlugs.has(nodeSlug(selectedNode))) {
+        const available = nodes.find((n) => !usedSlugs.has(nodeSlug(n))) || nodes[0]
+        if (available) {
+          setSelectedNode(available)
+        }
+      }
+    }
+  }, [nodes, usedSlugs, selectedNode])
 
   // Chỉ hiển thị các ngách AI CHƯA TỪNG ĐƯỢC CHỌN (loại bỏ hoàn toàn ngách đã dùng)
   const aiNodes = nodes
@@ -642,40 +662,42 @@ export function InteractiveKnowledgeGraph() {
 
   /** Mapping phân tích chuyên sâu & kịch bản sang màn hình ⚡ Workflow templates trong Video Faceless Studio */
   const handleMapToWorkflowTemplate = async (n: GraphNode | null) => {
-    if (!n) return
+    const target = n || selectedNode || nodes.find((x) => !usedSlugs.has(nodeSlug(x))) || nodes[0]
+    if (!target) return
     // Lấy nội dung phân tích chuyên sâu (nếu đã chạy xong) hoặc kịch bản chi tiết của node
-    const textToMap = (aiInsight && aiInsightFor === n.id)
+    const textToMap = (aiInsight && aiInsightFor === target.id)
       ? aiInsight
-      : `[Kịch Bản & Chiến Lược Ngách: ${n.label}]\n\n• Phân Tích: Đang tăng trưởng mạnh trong thị trường MMO 2026.\n• Chiến Lược Traffic: ${n.details?.trafficStrategy || 'Làm video ngắn demo tự động hóa chốt đơn 1 click trên TikTok & Reels'}\n• Mô Hình Khuyến Nghị: ${n.details?.recommendedModel || 'Gemini 2.5 Flash'}\n• Lưu Ý ToS: ${n.details?.tosCaution || 'Minh bạch nội dung affiliate'}`
+      : `[Kịch Bản & Chiến Lược Ngách: ${target.label}]\n\n• Phân Tích: Đang tăng trưởng mạnh trong thị trường MMO 2026.\n• Chiến Lược Traffic: ${target.details?.trafficStrategy || 'Làm video ngắn demo tự động hóa chốt đơn 1 click trên TikTok & Reels'}\n• Mô Hình Khuyến Nghị: ${target.details?.recommendedModel || 'Gemini 2.5 Flash'}\n• Lưu Ý ToS: ${target.details?.tosCaution || 'Minh bạch nội dung affiliate'}`
 
     // Đánh dấu ngách đã dùng để các lượt sau không hiển thị nữa
     try {
-      await handlePickNiche(n)
+      await handlePickNiche(target)
     } catch {}
 
     // Lưu vào localStorage để màn hình Workflow templates tự động prefill
     try {
       localStorage.setItem('videogen_mapped_script', textToMap)
-      localStorage.setItem('videogen_mapped_topic', n.label)
+      localStorage.setItem('videogen_mapped_topic', target.label)
       localStorage.setItem('videogen_mapped_source', 'knowledge_graph')
     } catch {}
 
     // Điều hướng trực tiếp sang Video Faceless Studio tại màn hình Workflow templates
     const prov = providerId || 'utim'
-    router.push(`/video-faceless?studio=1&template=1&topic=${encodeURIComponent(n.label)}&provider=${encodeURIComponent(prov)}`)
+    router.push(`/video-faceless?studio=1&template=1&topic=${encodeURIComponent(target.label)}&provider=${encodeURIComponent(prov)}`)
   }
 
   /** Mapping ngách → Video Faceless: tạo dự án từ node đang chọn rồi mở thẳng
    * tab Kịch bản (nơi có nút "Xuất brief Director Studio"). */
   const [creatingVideo, setCreatingVideo] = useState(false)
   const handleCreateVideoProject = async (n: GraphNode | null) => {
-    if (!n || creatingVideo) return
+    const target = n || selectedNode || nodes.find((x) => !usedSlugs.has(nodeSlug(x))) || nodes[0]
+    if (!target || creatingVideo) return
     setCreatingVideo(true)
     try {
-      const title = n.label.length > 150 ? n.label.slice(0, 150) : n.label
+      const title = target.label.length > 150 ? target.label.slice(0, 150) : target.label
       const p = await createVideoProject({ title, series: 'Ngách AI' })
       // Đánh dấu ngách đã dùng + backfill như luồng Copilot (chạy nền, không chặn)
-      handlePickNiche(n).catch(() => {})
+      handlePickNiche(target).catch(() => {})
       router.push(`/video-faceless?project=${p.id}&tab=script`)
     } catch {
       setScanError('Không tạo được dự án Video Faceless. Hãy thử lại.')
@@ -705,19 +727,20 @@ export function InteractiveKnowledgeGraph() {
 
   /** Agent phân tích chuyên sâu node đang chọn (trend, cạnh tranh, sub-ngách). */
   const handleAnalyze = async () => {
-    if (!selectedNode || analyzing) return
+    const target = selectedNode || nodes.find((x) => !usedSlugs.has(nodeSlug(x))) || nodes[0]
+    if (!target || analyzing) return
     const provider = requireProvider()
     if (!provider) return
     setAnalyzing(true)
     try {
       const res = await sendAgentRun(
         provider,
-        [{ role: 'user' as const, content: buildNodeAnalysisPrompt(selectedNode) }],
+        [{ role: 'user' as const, content: buildNodeAnalysisPrompt(target) }],
         model || undefined,
         { maxTurns: 8, tools: ['web_search', 'fetch_url', 'get_current_time'] },
       )
       setAiInsight(res.content)
-      setAiInsightFor(selectedNode.id)
+      setAiInsightFor(target.id)
     } catch (err) {
       setAiInsight(err instanceof ApiError ? `Lỗi: ${err.message}` : 'Phân tích thất bại. Hãy thử lại.')
       setAiInsightFor(selectedNode.id)
@@ -894,19 +917,36 @@ export function InteractiveKnowledgeGraph() {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
-    const clickX = (e.clientX - rect.left - canvas.width / 2) / zoomLevel + canvas.width / 2
-    const clickY = (e.clientY - rect.top - canvas.height / 2) / zoomLevel + canvas.height / 2
+    if (!rect.width || !rect.height) return
 
-    // Find clicked node
-    const found = nodes.find((n) => {
-      if (!n.x || !n.y) return false
-      if (usedSlugs.has(nodeSlug(n))) return false
-      const dist = Math.sqrt((n.x - clickX) ** 2 + (n.y - clickY) ** 2)
-      return dist <= n.val + 5
+    // Tỉ lệ scale chuẩn xác giữa canvas buffer (800x520) và kích thước hiển thị CSS thực tế
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+
+    const mouseX = (e.clientX - rect.left) * scaleX
+    const mouseY = (e.clientY - rect.top) * scaleY
+
+    // Quy đổi theo tâm canvas và mức độ phóng to/thu nhỏ (zoomLevel)
+    const clickX = (mouseX - canvas.width / 2) / zoomLevel + canvas.width / 2
+    const clickY = (mouseY - canvas.height / 2) / zoomLevel + canvas.height / 2
+
+    // Tìm node gần nhất với điểm bấm (bán kính nhận diện nhạy, bao phủ cả nhãn tên node)
+    let closestNode: GraphNode | null = null
+    let minDist = Infinity
+
+    nodes.forEach((n) => {
+      if (!n.x || !n.y) return
+      if (usedSlugs.has(nodeSlug(n))) return
+      const dist = Math.hypot(n.x - clickX, n.y - clickY)
+      const hitRadius = Math.max(n.val + 20, 38)
+      if (dist <= hitRadius && dist < minDist) {
+        minDist = dist
+        closestNode = n
+      }
     })
 
-    if (found) {
-      setSelectedNode(found)
+    if (closestNode) {
+      setSelectedNode(closestNode)
     }
   }
 
@@ -1135,7 +1175,32 @@ export function InteractiveKnowledgeGraph() {
 
         {/* Node Insight Panel */}
         <div className="glass-panel-glow rounded-xl p-5 flex flex-col justify-between">
-          {selectedNode ? (
+          <div>
+            {/* Quick Node Selector Dropdown */}
+            <div className="mb-4 pb-3 border-b border-white/10">
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                <span>🎯 Chọn Node Trong Mạng Lưới:</span>
+                <span className="text-[10px] text-brand-emerald font-mono">
+                  {nodes.filter((n) => !usedSlugs.has(nodeSlug(n))).length} node khả dụng
+                </span>
+              </label>
+              <select
+                value={selectedNode?.id || ''}
+                onChange={(e) => {
+                  const found = nodes.find((n) => n.id === e.target.value)
+                  if (found) setSelectedNode(found)
+                }}
+                className="w-full px-3 py-2 rounded-lg bg-dark-900 border border-brand-emerald/40 text-xs text-white focus:outline-none focus:border-brand-emerald font-medium"
+              >
+                {nodes.filter((n) => !usedSlugs.has(nodeSlug(n))).map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.label} {n.score ? `— Điểm AI: ${n.score}/100` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedNode ? (
             <div>
               <div className="flex items-center justify-between gap-2 mb-3">
                 <span
@@ -1238,6 +1303,7 @@ export function InteractiveKnowledgeGraph() {
           ) : (
             <p className="text-xs text-slate-400">Vui lòng chọn một Node trên biểu đồ.</p>
           )}
+          </div>
 
           <div className="pt-4 border-t border-white/10 mt-4 space-y-2">
             {/* Chọn AI phân tích node — cùng cấu trúc AI Chat Pro, đồng bộ với toolbar */}
@@ -1254,7 +1320,7 @@ export function InteractiveKnowledgeGraph() {
             </div>
             <button
               onClick={handleAnalyze}
-              disabled={analyzing || !selectedNode}
+              disabled={analyzing || (!selectedNode && nodes.length === 0)}
               className="w-full py-2.5 px-4 rounded-lg border border-brand-violet/40 text-brand-violet font-bold text-xs flex items-center justify-center gap-2 hover:bg-brand-violet/10 transition-all disabled:opacity-50 disabled:cursor-wait"
             >
               {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <BrainCircuit className="w-4 h-4" />}
@@ -1268,7 +1334,7 @@ export function InteractiveKnowledgeGraph() {
             <button
               type="button"
               onClick={() => handleMapToWorkflowTemplate(selectedNode)}
-              disabled={!selectedNode}
+              disabled={!selectedNode && nodes.length === 0}
               className="w-full py-2.5 px-4 rounded-lg bg-gradient-to-r from-brand-emerald to-brand-cyan text-dark-950 font-bold text-xs flex items-center justify-center gap-2 hover:opacity-95 shadow-glow-emerald transition-all disabled:opacity-50"
             >
               <span>Dùng AI Copilot Tạo Kịch Bản Cho Node Này</span>
@@ -1276,7 +1342,7 @@ export function InteractiveKnowledgeGraph() {
             </button>
             <button
               onClick={() => handleCreateVideoProject(selectedNode)}
-              disabled={creatingVideo || !selectedNode}
+              disabled={creatingVideo || (!selectedNode && nodes.length === 0)}
               title="Tạo dự án Video Faceless từ ngách này rồi mở thẳng tab Kịch bản — nơi có nút Xuất brief Director Studio"
               className="w-full py-2.5 px-4 rounded-lg border border-brand-cyan/40 text-brand-cyan font-bold text-xs flex items-center justify-center gap-2 hover:bg-brand-cyan/10 transition-all disabled:opacity-50 disabled:cursor-wait"
             >
