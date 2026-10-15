@@ -762,6 +762,12 @@ export function VideoGenStudio({
       const lines = block.split('\n').map((l) => l.trim()).filter(Boolean)
       if (!lines.length) continue
 
+      // Bỏ qua block mở đầu chỉ chứa tiêu đề / metadata của kịch bản
+      const hasExplicitField = lines.some((l) => /^(?:SCRIPT|THOẠI|LỜI THOẠI|VOICE|PROMPT|ẢNH|VISUAL)[:=]/i.test(l))
+      if (!hasExplicitField && sceneBlocks.length > 1 && newScenes.length === 0) {
+        continue
+      }
+
       let text = ''
       let prompt = ''
       let camera = 'dynamic push-in, eye-level intense focus'
