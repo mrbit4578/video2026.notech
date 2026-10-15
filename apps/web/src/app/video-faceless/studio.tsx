@@ -17,6 +17,7 @@ import {
   Copy,
   Workflow,
   FileSpreadsheet,
+  RotateCcw,
 } from 'lucide-react'
 import { api, ApiError, API_BASE_URL } from '../../lib/api'
 import { composeVideo } from '../../lib/video-compositor'
@@ -220,6 +221,72 @@ export function VideoGenStudio({
     kind: '',
     msg: '',
   })
+
+  // Kaizen M1/M2: Checkpoint resilience (local-first state persistence)
+  const [restorableCheckpoint, setRestorableCheckpoint] = useState<{
+    topic: string
+    title: string
+    duration: number
+    scenes: GenScene[]
+    timestamp: number
+  } | null>(null)
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('openmedia_studio_checkpoint')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+          setRestorableCheckpoint(parsed)
+        }
+      }
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    if (scenes.length > 0) {
+      try {
+        localStorage.setItem(
+          'openmedia_studio_checkpoint',
+          JSON.stringify({
+            topic,
+            title,
+            duration,
+            scenes,
+            timestamp: Date.now(),
+          })
+        )
+      } catch {}
+    }
+  }, [scenes, topic, title, duration])
+
+  const restoreCheckpoint = () => {
+    if (!restorableCheckpoint) return
+    setTopic(restorableCheckpoint.topic || '')
+    setTitle(restorableCheckpoint.title || '')
+    setDuration(restorableCheckpoint.duration || 45)
+    setScenes(restorableCheckpoint.scenes || [])
+    setRestorableCheckpoint(null)
+    setStatus({ kind: 'ok', msg: `Đã khôi phục phiên làm việc trước: ${restorableCheckpoint.scenes.length} cảnh.` })
+  }
+
+  const dismissCheckpoint = () => {
+    try {
+      localStorage.removeItem('openmedia_studio_checkpoint')
+    } catch {}
+    setRestorableCheckpoint(null)
+  }
+
+  const resetStudioSession = () => {
+    if (scenes.length > 0 && typeof window !== 'undefined' && !window.confirm('Bạn có chắc muốn xóa phiên làm việc hiện tại và bắt đầu kịch bản mới?')) {
+      return
+    }
+    setScenes([])
+    setResultUrl(null)
+    setTplResult(null)
+    dismissCheckpoint()
+    setStatus({ kind: '', msg: '' })
+  }
 
   useEffect(() => {
     api
@@ -751,11 +818,40 @@ export function VideoGenStudio({
           </h1>
           <p className="text-xs text-slate-400 mt-1 max-w-2xl">
             Tạo video faceless hoàn chỉnh ngay trên web: AI viết kịch bản → sinh ảnh →
-            sinh giọng đọc → (tuỳ chọn) clip AI → dựng trong trình duyệt. Chạy bằng
-            API key Pro bạn đã kết nối — key chỉ dùng ở server, không lộ ra trình duyệt.
+            sinh giọng đọc → (tuỳ chọn) clip AI → dựng trong trình duyệt. Tự động lưu checkpoint phiên làm việc.
           </p>
         </div>
+        {scenes.length > 0 && (
+          <button
+            onClick={resetStudioSession}
+            className="px-3 py-1.5 rounded-xl border border-rose-500/30 text-rose-300 text-xs font-semibold hover:bg-rose-500/10 transition-all flex items-center gap-1.5 self-start"
+            title="Xóa phiên hiện tại để tạo kịch bản mới"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Tạo kịch bản mới</span>
+          </button>
+        )}
       </div>
+
+      {/* Checkpoint restore banner (OpenMedia Kaizen M1/M2) */}
+      {restorableCheckpoint && scenes.length === 0 && (
+        <div className="p-3.5 rounded-xl bg-brand-emerald/10 border border-brand-emerald/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-200 shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-brand-emerald shrink-0" />
+            <span>
+              Tìm thấy phiên làm việc trước: <strong>{restorableCheckpoint.title || restorableCheckpoint.topic}</strong> ({restorableCheckpoint.scenes.length} scene, lưu lúc {new Date(restorableCheckpoint.timestamp).toLocaleTimeString()}).
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={restoreCheckpoint} className={btnPrimary + ' py-1 px-3 text-xs'}>
+              Khôi phục phiên này
+            </button>
+            <button onClick={dismissCheckpoint} className={btnGhost + ' py-1 px-2.5 text-xs text-slate-400'}>
+              Bỏ qua
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Trạng thái key */}
       <div className="p-4 rounded-xl bg-dark-900/60 border border-dark-700">

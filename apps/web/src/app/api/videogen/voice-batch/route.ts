@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parseJsonGuarded, MAX_BATCH_PAYLOAD_BYTES } from '../../../../lib/server-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +33,11 @@ function formatSrtTime(totalSeconds: number): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const guarded = await parseJsonGuarded<any>(req, MAX_BATCH_PAYLOAD_BYTES)
+    if (!guarded.ok) {
+      return guarded.response
+    }
+    const body = guarded.data
     const { segments = [], voice, language = 'vi-VN', provider } = body
 
     const results = segments.map((seg: { id: string; text: string }, idx: number) => {

@@ -45,8 +45,11 @@ async function request<T>(
   body?: unknown,
   /** true → body là FormData, không set Content-Type để browser tự thêm boundary */
   asForm?: boolean,
+  timeoutMs: number = 60000,
 ): Promise<T> {
   const url = resolveApiUrl(path)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   let res: Response
   try {
     res = await fetch(url, {
@@ -60,12 +63,21 @@ async function request<T>(
             ? (body as BodyInit)
             : JSON.stringify(body)
           : undefined,
+      signal: controller.signal,
     })
-  } catch {
+  } catch (fetchErr: any) {
+    if (fetchErr?.name === 'AbortError') {
+      throw new ApiError(
+        408,
+        `Hết thời gian chờ phản hồi từ máy chủ (${Math.round(timeoutMs / 1000)}s). Vui lòng thử lại.`,
+      )
+    }
     throw new ApiError(
       0,
       'Không kết nối được tới API. Kiểm tra mạng hoặc cấu hình hệ thống.',
     )
+  } finally {
+    clearTimeout(timer)
   }
 
   if (res.status === 401) {
@@ -93,16 +105,17 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path, 'GET'),
-  post: <T>(path: string, body?: unknown) => request<T>(path, 'POST', body),
-  put: <T>(path: string, body?: unknown) => request<T>(path, 'PUT', body),
-  patch: <T>(path: string, body?: unknown) => request<T>(path, 'PATCH', body),
-  del: <T>(path: string) => request<T>(path, 'DELETE'),
+  get: <T>(path: string, timeoutMs?: number) => request<T>(path, 'GET', undefined, false, timeoutMs),
+  post: <T>(path: string, body?: unknown, timeoutMs?: number) => request<T>(path, 'POST', body, false, timeoutMs),
+  put: <T>(path: string, body?: unknown, timeoutMs?: number) => request<T>(path, 'PUT', body, false, timeoutMs),
+  patch: <T>(path: string, body?: unknown, timeoutMs?: number) => request<T>(path, 'PATCH', body, false, timeoutMs),
+  del: <T>(path: string, timeoutMs?: number) => request<T>(path, 'DELETE', undefined, false, timeoutMs),
 
   /** Upload multipart FormData */
-  uploadFile: <T>(path: string, formData: FormData) =>
-    request<T>(path, 'POST', formData, true),
+  uploadFile: <T>(path: string, formData: FormData, timeoutMs?: number) =>
+    request<T>(path, 'POST', formData, true, timeoutMs),
 
   /** URL OAuth cho provider */
   oauthStartUrl: (provider: string) => resolveApiUrl(`/auth/${provider}/start`),
 }
+

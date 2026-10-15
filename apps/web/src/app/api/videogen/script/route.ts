@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getStoredAiKeys } from '../../../../lib/ai-vault'
+import { parseJsonGuarded } from '../../../../lib/server-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,9 @@ function parseJsonLoose(text: string): any {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const guarded = await parseJsonGuarded<any>(req)
+    if (!guarded.ok) return guarded.response
+    const body = guarded.data
     const { topic = '', duration = 45, provider, sourceScript } = body
 
     const cleanTopic = String(topic).trim() || 'Kinh doanh online và tạo video triệu view 2026'
@@ -48,7 +51,8 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: `${sys}\n\n${user}` }] }],
               generationConfig: { responseMimeType: 'application/json', temperature: 0.7 }
-            })
+            }),
+            signal: AbortSignal.timeout(25000)
           }
         )
 

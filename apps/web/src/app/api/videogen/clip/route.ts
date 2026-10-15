@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
+import { parseJsonGuarded } from '../../../../lib/server-guard'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const guarded = await parseJsonGuarded<any>(req)
+    if (!guarded.ok) {
+      return guarded.response
+    }
+    const body = guarded.data
     const { provider, model } = body
 
     const jobId = `job_${Date.now()}_${randomUUID().slice(0, 8)}`

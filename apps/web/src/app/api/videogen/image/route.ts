@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getStoredAiKeys } from '../../../../lib/ai-vault'
+import { parseJsonGuarded } from '../../../../lib/server-guard'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const guarded = await parseJsonGuarded<any>(req)
+    if (!guarded.ok) return guarded.response
+    const body = guarded.data
     const { prompt = '', aspectRatio = '9:16', provider } = body
 
     const cleanPrompt = String(prompt).trim() || 'Cinematic vertical 9:16 scene, ultra realistic 8k'

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parseJsonGuarded } from '../../../../lib/server-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +25,9 @@ function createWavBuffer(seconds: number, sampleRate = 16000): Buffer {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const guarded = await parseJsonGuarded<any>(req)
+    if (!guarded.ok) return guarded.response
+    const body = guarded.data
     const { text = '', voice, language = 'vi-VN', provider } = body
 
     const cleanText = String(text).trim() || 'Chào mừng bạn đến với video ngắn tự động.'
