@@ -125,6 +125,19 @@ function VideoFacelessInner() {
   const initialTopic = searchParams.get('topic') || undefined
   // Mở thẳng tab trong chi tiết dự án (mapping từ trang ngách): ?project=<id>&tab=script
   const [initialTab] = useState(() => searchParams.get('tab'))
+
+  useEffect(() => {
+    const isStudio = searchParams.get('studio') === '1' || searchParams.get('template') === '1'
+    if (isStudio) {
+      setStudio(true)
+      const prov = searchParams.get('provider')
+      if (prov) setStudioProvider(prov)
+    }
+    const proj = searchParams.get('project')
+    if (proj) {
+      setSelectedId(proj)
+    }
+  }, [searchParams])
   if (selectedId && !studio)
     return <ProjectDetail id={selectedId} initialTab={initialTab} onBack={() => setSelectedId(null)} />
   if (studio)

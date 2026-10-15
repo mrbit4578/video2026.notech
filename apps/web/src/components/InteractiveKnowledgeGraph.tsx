@@ -576,6 +576,18 @@ export function InteractiveKnowledgeGraph() {
       const pickedSlug = nodeSlug(n)
       const visibleSlugs = nodes.filter((x) => x.aiGenerated).map((x) => nodeSlug(x))
       let backfill: MixedNiche | null = null
+
+      // 1. Luôn lưu vào danh sách đã dùng (localStorage & serverless API) để KHÔNG BAO GIỜ hiển thị lại
+      await markNicheUsed({
+        slug: pickedSlug,
+        label: n.label,
+        category: n.category,
+        score: n.score,
+        rationale: n.rationale,
+        source: 'scan',
+      }).catch(() => {})
+
+      // 2. Lấy ngách backfill thay thế từ pool nếu có
       setBackfilling(true)
       try {
         const res = await replaceNiche({
@@ -588,17 +600,7 @@ export function InteractiveKnowledgeGraph() {
           visibleSlugs,
         })
         backfill = res.backfill
-      } catch {
-        // Backend cũ chưa có /niches/replace — fallback: chỉ đánh dấu đã dùng
-        await markNicheUsed({
-          slug: pickedSlug,
-          label: n.label,
-          category: n.category,
-          score: n.score,
-          rationale: n.rationale,
-          source: 'scan',
-        })
-      } finally {
+      } catch {} finally {
         setBackfilling(false)
       }
 
@@ -644,6 +646,7 @@ export function InteractiveKnowledgeGraph() {
       setScanError('Không lưu được trạng thái đã dùng. Hãy thử lại.')
     } finally {
       setMarkingUsed(false)
+      setBackfilling(false)
     }
   }
 
@@ -671,7 +674,14 @@ export function InteractiveKnowledgeGraph() {
 
     // Đánh dấu ngách đã dùng để các lượt sau không hiển thị nữa
     try {
-      await handlePickNiche(target)
+      await markNicheUsed({
+        slug: nodeSlug(target),
+        label: target.label,
+        category: target.category,
+        score: target.score,
+        rationale: target.rationale,
+        source: 'map_workflow',
+      }).catch(() => {})
     } catch {}
 
     // Lưu vào localStorage để màn hình Workflow templates tự động prefill
@@ -683,7 +693,7 @@ export function InteractiveKnowledgeGraph() {
 
     // Điều hướng trực tiếp sang Video Faceless Studio tại màn hình Workflow templates
     const prov = providerId || 'utim'
-    router.push(`/video-faceless?studio=1&template=1&topic=${encodeURIComponent(target.label)}&provider=${encodeURIComponent(prov)}`)
+    window.location.href = `/video-faceless?studio=1&template=1&topic=${encodeURIComponent(target.label)}&provider=${encodeURIComponent(prov)}`
   }
 
   /** Mapping ngách → Video Faceless: tạo dự án từ node đang chọn rồi mở thẳng
@@ -696,9 +706,16 @@ export function InteractiveKnowledgeGraph() {
     try {
       const title = target.label.length > 150 ? target.label.slice(0, 150) : target.label
       const p = await createVideoProject({ title, series: 'Ngách AI' })
-      // Đánh dấu ngách đã dùng + backfill như luồng Copilot (chạy nền, không chặn)
-      handlePickNiche(target).catch(() => {})
-      router.push(`/video-faceless?project=${p.id}&tab=script`)
+      // Đánh dấu ngách đã dùng
+      await markNicheUsed({
+        slug: nodeSlug(target),
+        label: target.label,
+        category: target.category,
+        score: target.score,
+        rationale: target.rationale,
+        source: 'create_video',
+      }).catch(() => {})
+      window.location.href = `/video-faceless?project=${p.id}&tab=script`
     } catch {
       setScanError('Không tạo được dự án Video Faceless. Hãy thử lại.')
     } finally {
@@ -729,9 +746,10 @@ export function InteractiveKnowledgeGraph() {
   const handleAnalyze = async () => {
     const target = selectedNode || nodes.find((x) => !usedSlugs.has(nodeSlug(x))) || nodes[0]
     if (!target || analyzing) return
-    const provider = requireProvider()
-    if (!provider) return
+    const provider = requireProvider() || 'utim'
     setAnalyzing(true)
+    setAiInsight('⚡ AI Agent đang phân tích chuyên sâu dữ liệu xu hướng, đối thủ và kịch bản cho ngách này...')
+    setAiInsightFor(target.id)
     try {
       const res = await sendAgentRun(
         provider,
@@ -743,7 +761,7 @@ export function InteractiveKnowledgeGraph() {
       setAiInsightFor(target.id)
     } catch (err) {
       setAiInsight(err instanceof ApiError ? `Lỗi: ${err.message}` : 'Phân tích thất bại. Hãy thử lại.')
-      setAiInsightFor(selectedNode.id)
+      setAiInsightFor(target.id)
     } finally {
       setAnalyzing(false)
     }

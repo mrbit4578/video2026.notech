@@ -81,15 +81,7 @@ async function request<T>(
   }
 
   if (res.status === 401) {
-    if (typeof window !== 'undefined') {
-      const currentPath = window.location.pathname
-      const onAuthPage = currentPath.startsWith('/login') || currentPath.startsWith('/register')
-      // Không tự động chuyển hướng khi request chỉ là kiểm tra trạng thái session (/auth/session)
-      if (!onAuthPage && !path.includes('/auth/session')) {
-        window.location.href = '/login'
-      }
-    }
-    throw new ApiError(401, 'Phiên làm việc hết hạn. Hãy đăng nhập lại.')
+    throw new ApiError(401, 'Phiên làm việc hết hạn hoặc cần đăng nhập.')
   }
 
   const text = await res.text()
