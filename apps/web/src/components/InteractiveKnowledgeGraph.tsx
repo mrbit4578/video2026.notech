@@ -211,19 +211,82 @@ function buildNicheScanPrompt(existingLabels: string[], linkableIds: string[], u
   ].join('\n')
 }
 
-/** Prompt yêu cầu agent phân tích chuyên sâu một node ngách (trend, cạnh tranh, sub-ngách). */
+/**
+ * Hàm xây dựng Bản vẽ Kịch bản Điện Ảnh chuẩn VeoGenie Trang-9
+ * Áp dụng: Asset Tagging, Ánh sáng thực tế, Cú máy Hollywood, Sound Design kịch tính.
+ */
+function buildDefaultCinematicBlueprint(node: GraphNode): string {
+  const cleanLabel = node.label.replace(/^Ngách:\s*/i, '').trim()
+  const strategy = node.details?.trafficStrategy || 'Làm video ngắn kịch tính 3s đầu chốt đơn tự động hóa'
+  return [
+    `🎬 [ĐẠO DIỄN BẢN VẼ ĐIỆN ẢNH — CHUẨN VEOGENIE TRANG-9]`,
+    `CHỦ ĐỀ: ${cleanLabel} (Chiến Dịch Video Điện Ảnh 2026)`,
+    `CHIẾN LƯỢC TRAFFIC: ${strategy}`,
+    ``,
+    `HỆ THỐNG NHÂN VẬT & ASSET (Character Consistency):`,
+    `• Asset: #1 Minh (Chuyên gia công nghệ / Nhà sáng tạo thế hệ mới, trang phục tối giản hiện đại, ánh mắt tập trung sắc bén)`,
+    `• Asset: #2 Linh (Khách hàng tiềm năng, đang bế tắc vì tốn hàng giờ làm việc thủ công, biểu cảm căng thẳng)`,
+    ``,
+    `BỐI CẢNH & ÁNH SÁNG ĐIỆN ẢNH (Atmosphere & Practical Lighting):`,
+    `• Không gian studio công nghệ hiện đại lúc nửa đêm, ánh sáng practical lighting từ màn hình phát quang và đèn neon viền xanh ngọc (cyan rim light), độ tương phản cao, đổ bóng sâu (deep cinematic shadows), chất lượng 8k photorealistic.`,
+    ``,
+    `THIẾT KẾ ÂM THANH (Sound Design & Sensory Cues):`,
+    `• Tiếng gõ phím dồn dập, tiếng thở gấp, nhịp bass điện tử ngầm tạo sự căng thẳng, sau đó là tiếng click chuột dứt khoát giải phóng nút thắt.`,
+    ``,
+    `--- PHÂN CẢNH KỊCH BẢN CHI TIẾT (CINEMATIC SCENES) ---`,
+    ``,
+    `[SCENE 1: HOOK ĐIỆN ẢNH NGHẸT THỞ]`,
+    `DURATION: 4`,
+    `CAMERA: Dynamic push-in, eye-level intense focus, 24fps filmic shutter`,
+    `PROMPT: Cinematic vertical 9:16, Asset #1 Minh looking intensely at glowing multi-screen dashboard displaying ${cleanLabel} data spikes, atmospheric dark studio, volumetric rim light, ultra detailed 8k photorealistic live-action, no text, no watermark`,
+    `SCRIPT: Bạn vẫn đang làm ${cleanLabel} theo cách thủ công của 5 năm trước và tự hỏi tại sao mãi không có kết quả?`,
+    ``,
+    `[SCENE 2: XUNG ĐỘT & ĐIỂM CHẠM NỖI ĐAU]`,
+    `DURATION: 4`,
+    `CAMERA: Low-angle tracking pan right, high contrast shadows`,
+    `PROMPT: Cinematic vertical 9:16, Asset #2 Linh frustrated at cluttered desk with endless chaotic spreadsheets, red warning indicators on screen, dramatic practical lighting, moody cinematic shadows, 8k resolution`,
+    `SCRIPT: Trong khi bạn cày ngày đêm thì đối thủ đã dùng AI tự động hóa toàn bộ quy trình, tạo dòng tiền đều đặn mà không cần chạm tay.`,
+    ``,
+    `[SCENE 3: CAO TRÀO BỨT PHÁ GIẢI PHÁP]`,
+    `DURATION: 5`,
+    `CAMERA: Smooth dolly zoom, wide dynamic view, inspiring atmosphere`,
+    `PROMPT: Cinematic vertical 9:16, futuristic holographic AI workflow engine orchestrating ${cleanLabel} campaigns in real-time, sleek glowing emerald and cyan light beams, high-end cinema commercial look, 8k`,
+    `SCRIPT: Đây là hệ thống vận hành thế hệ mới: kết hợp mô hình AI Argon 2026 và workflow tự động hóa chuyển đổi cao.`,
+    ``,
+    `[SCENE 4: CHỐT HẠ & KÊU GỌI HÀNH ĐỘNG]`,
+    `DURATION: 4`,
+    `CAMERA: Front medium hero shot, gentle tilt-up, confident lighting`,
+    `PROMPT: Cinematic vertical 9:16, Asset #1 Minh smiling confidently presenting clear winning metrics on transparent futuristic pad, warm golden hour studio fill light, premium theatrical cinematic finish`,
+    `SCRIPT: Đừng đứng nhìn người khác dẫn trước. Bấm vào link bio để nhận ngay bộ quy trình tự động hóa này hôm nay!`
+  ].join('\n')
+}
+
+/**
+ * Prompt yêu cầu agent phân tích chuyên sâu một node ngách và xây dựng ý tưởng & kịch bản điện ảnh chuẩn VeoGenie Trang-9.
+ */
 function buildNodeAnalysisPrompt(node: GraphNode): string {
   const d = node.details
   return [
-    `Phân tích chuyên sâu ngách "${node.label}" cho thị trường kiếm tiền online Việt Nam năm 2026.`,
-    d ? `Dữ liệu hiện có: ROI ${d.roi}, hoa hồng ${d.commission}, chiến lược traffic: ${d.trafficStrategy}.` : '',
-    'Dùng web_search để kiểm chứng trend hiện tại, rồi trả lời bằng tiếng Việt theo đúng cấu trúc:',
-    '1. NHIỆT ĐỘ TREND: đang lên/đi ngang/hạ nhiệt + bằng chứng 1-2 dòng.',
-    '2. MỨC CẠNH TRANH: thấp/trung bình/cao + ai đang làm tốt.',
-    '3. 3 SUB-NGÁCH TỐI ƯU: ngách con ít cạnh tranh hơn nhưng vẫn thơm (mỗi cái 1 dòng + vì sao).',
-    '4. CHIẾN LƯỢC TRAFFIC ĐỀ XUẤT: kênh cụ thể + format content + tần suất.',
-    '5. RỦI RO & ToS: điều cần tránh.',
-    'Ngắn gọn, mỗi mục tối đa 4 dòng. Không hứa hẹn thu nhập chắc chắn.',
+    `Bạn là Tổng Đạo Diễn & Chuyên Gia Chiến Lược Nội Dung Điện Ảnh (Hollywood & VeoGenie Trang-9 Standard).`,
+    `Hãy phân tích chuyên sâu ngách "${node.label}" và xây dựng ĐẠO DIỄN BẢN VẼ ĐIỆN ẢNH (Cinematic Concept & Director's Blueprint) cho thị trường kiếm tiền online năm 2026.`,
+    d ? `Dữ liệu ngách: ROI ${d.roi}, hoa hồng ${d.commission}, chiến lược traffic: ${d.trafficStrategy}.` : '',
+    'Dùng web_search kiểm chứng xu hướng, rồi trình bày bằng tiếng Việt mạch lạc theo 2 phần rõ rệt:',
+    '',
+    '=== PHẦN 1: BÁO CÁO THỊ TRƯỜNG & CHIẾN LƯỢC TRAFFIC (Ngắn gọn, mỗi ý 2 dòng) ===',
+    '1. NHIỆT ĐỘ TREND: Đang lên / bão hòa + bằng chứng.',
+    '2. 3 SUB-NGÁCH TỐI ƯU: 3 ngách con ít cạnh tranh nhưng hoa hồng thơm.',
+    '3. CHIẾN LƯỢC KÉO TRAFFIC 2026: Format video ngắn, nhịp giữ chân 3s đầu.',
+    '',
+    '=== PHẦN 2: CONCEPT & KỊCH BẢN PHIM ĐIỆN ẢNH (CHUẨN VEOGENIE TRANG-9) ===',
+    '• HỆ THỐNG NHÂN VẬT (Character Consistency): Đặt tên nhân vật rõ ràng dạng "Asset: #1 [Tên nhân vật chính], #2 [Khách hàng / Mentor]...".',
+    '• BỐI CẢNH & ÁNH SÁNG THỰC TẾ: Không gian điện ảnh sống động (photorealistic live-action, volumetric practical lighting, deep shadows, cinematic rim light 8k).',
+    '• THIẾT KẾ ÂM THANH (Sound Design & Sensory Cues): Tiếng động môi trường cụ thể (tiếng bước chân, kim loại, nhịp thở, SFX kịch tính...).',
+    '• PHÂN CẢNH KỊCH BẢN CHI TIẾT (4 Cảnh chuẩn format):',
+    '  - [SCENE 1: HOOK ĐIỆN ẢNH] | CAMERA: ... | PROMPT: Cinematic vertical 9:16, Asset #1... | SCRIPT: (Lời thoại tiếng Việt)',
+    '  - [SCENE 2: XUNG ĐỘT & NỖI ĐAU] | CAMERA: ... | PROMPT: Cinematic vertical 9:16, Asset #2... | SCRIPT: ...',
+    '  - [SCENE 3: CAO TRÀO GIẢI PHÁP] | CAMERA: ... | PROMPT: ... | SCRIPT: ...',
+    '  - [SCENE 4: KẾT THÚC & CTA] | CAMERA: ... | PROMPT: ... | SCRIPT: ...',
+    'Yêu cầu: Không dùng văn mẫu sáo rỗng. Hãy viết kịch bản gay cấn, lôi cuốn, mang tính điện ảnh cao nhất.'
   ].join('\n')
 }
 
@@ -667,10 +730,10 @@ export function InteractiveKnowledgeGraph() {
   const handleMapToWorkflowTemplate = async (n: GraphNode | null) => {
     const target = n || selectedNode || nodes.find((x) => !usedSlugs.has(nodeSlug(x))) || nodes[0]
     if (!target) return
-    // Lấy nội dung phân tích chuyên sâu (nếu đã chạy xong) hoặc kịch bản chi tiết của node
+    // Lấy nội dung phân tích chuyên sâu (nếu đã chạy xong) hoặc kịch bản điện ảnh chi tiết của node
     const textToMap = (aiInsight && aiInsightFor === target.id)
       ? aiInsight
-      : `[Kịch Bản & Chiến Lược Ngách: ${target.label}]\n\n• Phân Tích: Đang tăng trưởng mạnh trong thị trường MMO 2026.\n• Chiến Lược Traffic: ${target.details?.trafficStrategy || 'Làm video ngắn demo tự động hóa chốt đơn 1 click trên TikTok & Reels'}\n• Mô Hình Khuyến Nghị: ${target.details?.recommendedModel || 'Gemini 2.5 Flash'}\n• Lưu Ý ToS: ${target.details?.tosCaution || 'Minh bạch nội dung affiliate'}`
+      : buildDefaultCinematicBlueprint(target)
 
     // Đánh dấu ngách đã dùng để các lượt sau không hiển thị nữa
     try {
@@ -689,6 +752,7 @@ export function InteractiveKnowledgeGraph() {
       localStorage.setItem('videogen_mapped_script', textToMap)
       localStorage.setItem('videogen_mapped_topic', target.label)
       localStorage.setItem('videogen_mapped_source', 'knowledge_graph')
+      localStorage.setItem('videogen_is_cinematic', '1')
     } catch {}
 
     // Điều hướng trực tiếp sang Video Faceless Studio tại màn hình Workflow templates

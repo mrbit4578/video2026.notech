@@ -746,6 +746,226 @@ export function VideoGenStudio({
     document.getElementById('studio-build')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  /** Chuyển đổi toàn bộ text dài trong template thành các phân cảnh Scenes 8K chuẩn điện ảnh */
+  const convertTplTextToScenes = () => {
+    if (!tplText.trim()) {
+      say('err', 'Chưa có nội dung kịch bản trong template để chuyển đổi.')
+      return
+    }
+
+    const trimmed = tplText.trim()
+    const newScenes: GenScene[] = []
+
+    // 1. Tách theo khối phân cảnh chuẩn [SCENE ...] hoặc --- SCENE ... --- hoặc [CẢNH ...]
+    const sceneBlocks = trimmed.split(/(?:---|===|\[(?:SCENE|CẢNH)\s*\d+[^\]]*\]|(?:\n|^)(?:SCENE|CẢNH)\s*\d+[:.\-])/i)
+    for (const block of sceneBlocks) {
+      const lines = block.split('\n').map((l) => l.trim()).filter(Boolean)
+      if (!lines.length) continue
+
+      let text = ''
+      let prompt = ''
+      let camera = 'dynamic push-in, eye-level intense focus'
+      let seconds = 4
+
+      for (const line of lines) {
+        if (/^(?:SCRIPT|THOẠI|LỜI THOẠI|VOICE)[:=]\s*(.+)/i.test(line)) {
+          text = line.replace(/^(?:SCRIPT|THOẠI|LỜI THOẠI|VOICE)[:=]\s*/i, '').trim()
+        } else if (/^(?:PROMPT|ẢNH|HÌNH ẢNH|VISUAL)[:=]\s*(.+)/i.test(line)) {
+          prompt = line.replace(/^(?:PROMPT|ẢNH|HÌNH ẢNH|VISUAL)[:=]\s*/i, '').trim()
+        } else if (/^(?:CAMERA|GÓC QUAY|CÚ MÁY)[:=]\s*(.+)/i.test(line)) {
+          camera = line.replace(/^(?:CAMERA|GÓC QUAY|CÚ MÁY)[:=]\s*/i, '').trim()
+        } else if (/^(?:DURATION|THỜI LƯỢNG|SECONDS)[:=]\s*(\d+)/i.test(line)) {
+          seconds = parseInt(line.replace(/^(?:DURATION|THỜI LƯỢNG|SECONDS)[:=]\s*/i, '').trim(), 10) || 4
+        }
+      }
+
+      if (text || prompt) {
+        newScenes.push({
+          text: text || prompt,
+          imagePrompt: prompt || `Cinematic vertical 9:16, ${text}, photorealistic 8k live-action, volumetric lighting, deep shadows, no text, no watermark`,
+          camera,
+          seconds,
+          imageDataUrl: null,
+          imageLoading: false,
+          imageProvider: null,
+          audioUrl: null,
+          voiceLoading: false,
+          voiceProvider: null,
+          srt: null,
+          clipUrl: null,
+          clipJobId: null,
+          clipStatus: null,
+          clipLoading: false,
+        })
+      }
+    }
+
+    // 2. Nếu không tách được theo block, tách theo các đoạn văn bản có ý nghĩa
+    if (!newScenes.length) {
+      const paragraphs = trimmed
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 15 && !p.startsWith('🎬') && !p.startsWith('===') && !p.startsWith('HỆ THỐNG'))
+
+      paragraphs.slice(0, 8).forEach((p, idx) => {
+        const cleanP = p.replace(/^[-•*]\s*/, '').replace(/^(?:Cảnh|Scene)\s*\d+[:.-]\s*/i, '')
+        newScenes.push({
+          text: cleanP,
+          imagePrompt: `Cinematic vertical 9:16, dramatic scene illustrating: ${cleanP}, photorealistic 8k, volumetric practical lighting, moody cinematic shadows, no text, no watermark`,
+          camera: idx % 2 === 0 ? 'dynamic push-in, eye-level' : 'slow tracking pan right, high contrast',
+          seconds: 4,
+          imageDataUrl: null,
+          imageLoading: false,
+          imageProvider: null,
+          audioUrl: null,
+          voiceLoading: false,
+          voiceProvider: null,
+          srt: null,
+          clipUrl: null,
+          clipJobId: null,
+          clipStatus: null,
+          clipLoading: false,
+        })
+      })
+    }
+
+    if (newScenes.length > 0) {
+      setScenes(newScenes)
+      say('ok', `🎬 Đã chuyển đổi thành công ${newScenes.length} phân cảnh điện ảnh 8K! Đã sẵn sàng cho tạo ảnh và xuất Desktop Studio.`)
+      setTimeout(() => {
+        const el = document.getElementById('studio-step-1')
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    } else {
+      say('err', 'Không tìm thấy phân cảnh hợp lệ trong văn bản. Hãy bấm nút "🎬 Nạp Mẫu Chuẩn Trang 9".')
+    }
+  }
+
+  /** Nạp kịch bản phim điện ảnh mẫu chuẩn VeoGenie Trang 9 (Horror/Thriller Cinematic Benchmark) */
+  const loadTrang9Template = () => {
+    const t9Topic = 'Trạm Kiểm Soát Tàu Điện Ngầm Bị Bỏ Hoang (VeoGenie Trang-9 Horror/Thriller)'
+    setTopic(t9Topic)
+    setTitle(t9Topic)
+
+    const benchmarkText = [
+      `🎬 [KỊCH BẢN PHIM ĐIỆN ẢNH KỊCH TÍNH — CHUẨN VEOGENIE TRANG-9]`,
+      `CHỦ ĐỀ: Metro Control Room Anomaly (Phim Điện Ảnh Kịch Tính / Horror Thriller)`,
+      ``,
+      `HỆ THỐNG NHÂN VẬT & ASSET (Character Consistency):`,
+      `• Asset: #1 Daniel (Nam chỉ huy tác chiến, mặc áo giáp rách tươm, ánh mắt kiên định, cầm đèn pin chiến thuật)`,
+      `• Asset: #2 Anna (Nữ kỹ sư công nghệ, trang phục phản quang, đeo ba lô radio khẩn cấp, vẻ mặt hoảng loạn)`,
+      `• Asset: #3 Survivor (Người sống sót bí ẩn trong bóng tối, trang phục phong trần, ánh mắt thất thần)`,
+      ``,
+      `BỐI CẢNH & ÁNH SÁNG ĐIỆN ẢNH (Atmosphere & Practical Lighting):`,
+      `• Inside the abandoned underground metro control room. Dimly illuminated by old surveillance monitors and flashing amber emergency lights. Volumetric atmospheric haze, deep shadows, 8k photorealistic live-action.`,
+      ``,
+      `THIẾT KẾ ÂM THANH (Sound Design & Sensory Cues):`,
+      `• Slow metallic scraping sound travels through ducts, faint radio static, heavy breathing, sudden low-frequency rumble, silence then sudden impact.`,
+      ``,
+      `--- PHÂN CẢNH KỊCH BẢN CHI TIẾT (CINEMATIC SCENES) ---`,
+      ``,
+      `[SCENE 1: BÓNG TỐI TRONG ĐƯỜNG HẦM]`,
+      `DURATION: 4`,
+      `CAMERA: Dynamic push-in, eye-level intense focus, 24fps filmic shutter`,
+      `PROMPT: Cinematic vertical 9:16, Asset #1 Daniel raises tactical flashlight in dark abandoned metro control room, dust motes floating in intense beam of light, dimly illuminated by flickering amber emergency consoles, ultra detailed 8k photorealistic live-action, deep shadows, no text, no watermark`,
+      `SCRIPT: Daniel chậm rãi giơ đèn pin chiến thuật soi dọc hành lang tối tăm của trạm kiểm soát tàu điện ngầm bị bỏ hoang.`,
+      ``,
+      `[SCENE 2: TÍN HIỆU BẤT THƯỜNG]`,
+      `DURATION: 4`,
+      `CAMERA: Low-angle tracking pan right, high contrast shadows`,
+      `PROMPT: Cinematic vertical 9:16, Asset #2 Anna stands close behind Daniel looking terrified, old CRT surveillance screens suddenly flicker to life with static noise, moody practical green and amber light, 8k resolution`,
+      `SCRIPT: Anna run rẩy nhìn dãy màn hình giám sát cũ kỹ bất ngờ chớp nháy đồng loạt phát ra tiếng rè rợn người.`,
+      ``,
+      `[SCENE 3: LỜI CẢNH BÁO TỬ THẦN]`,
+      `DURATION: 4`,
+      `CAMERA: Tight close-up, dramatic rim light, shallow depth of field`,
+      `PROMPT: Cinematic vertical 9:16, Asset #3 Survivor steps out from shadows, whispering with frantic eyes: "It found us.", dramatic cinematic lighting, photorealistic textures, 8k cinematic`,
+      `SCRIPT: Một người sống sót bất ngờ bước ra từ góc tối, ánh mắt thất thần thì thầm: "Nó... đã tìm thấy chúng ta rồi."`,
+      ``,
+      `[SCENE 4: CƠN ÁC MỘNG BẮT ĐẦU]`,
+      `DURATION: 4`,
+      `CAMERA: Rapid push-in, wide dynamic angle, emergency red strobe`,
+      `PROMPT: Cinematic vertical 9:16, Asset #1 Daniel shouts "Down!", flashing red emergency siren lights painting the metal corridor in bloody red hues, huge ominous shadow towering behind, theatrical horror film masterpiece`,
+      `SCRIPT: Daniel hét lớn: "Nằm xuống ngay!" khi còi báo động đỏ rực vang lên và bóng đen khổng lồ trùm kín cả căn phòng!`
+    ].join('\n')
+
+    setTplText(benchmarkText)
+    setTplTouched(true)
+
+    const trang9Scenes: GenScene[] = [
+      {
+        text: 'Daniel chậm rãi giơ đèn pin chiến thuật soi dọc hành lang tối tăm của trạm kiểm soát tàu điện ngầm bị bỏ hoang.',
+        imagePrompt: 'Cinematic vertical 9:16, Asset #1 Daniel raises tactical flashlight in dark abandoned metro control room, dust motes floating in intense beam of light, dimly illuminated by flickering amber emergency consoles, ultra detailed 8k photorealistic live-action, deep shadows, no text, no watermark',
+        camera: 'Dynamic push-in, eye-level intense focus, 24fps filmic shutter',
+        seconds: 4,
+        imageDataUrl: null,
+        imageLoading: false,
+        imageProvider: null,
+        audioUrl: null,
+        voiceLoading: false,
+        voiceProvider: null,
+        srt: null,
+        clipUrl: null,
+        clipJobId: null,
+        clipStatus: null,
+        clipLoading: false,
+      },
+      {
+        text: 'Anna run rẩy nhìn dãy màn hình giám sát cũ kỹ bất ngờ chớp nháy đồng loạt phát ra tiếng rè rợn người.',
+        imagePrompt: 'Cinematic vertical 9:16, Asset #2 Anna stands close behind Daniel looking terrified, old CRT surveillance screens suddenly flicker to life with static noise, moody practical green and amber light, 8k resolution',
+        camera: 'Low-angle tracking pan right, high contrast shadows',
+        seconds: 4,
+        imageDataUrl: null,
+        imageLoading: false,
+        imageProvider: null,
+        audioUrl: null,
+        voiceLoading: false,
+        voiceProvider: null,
+        srt: null,
+        clipUrl: null,
+        clipJobId: null,
+        clipStatus: null,
+        clipLoading: false,
+      },
+      {
+        text: 'Một người sống sót bất ngờ bước ra từ góc tối, ánh mắt thất thần thì thầm: "Nó... đã tìm thấy chúng ta rồi."',
+        imagePrompt: 'Cinematic vertical 9:16, Asset #3 Survivor steps out from shadows, whispering with frantic eyes: "It found us.", dramatic cinematic lighting, photorealistic textures, 8k cinematic',
+        camera: 'Tight close-up, dramatic rim light, shallow depth of field',
+        seconds: 4,
+        imageDataUrl: null,
+        imageLoading: false,
+        imageProvider: null,
+        audioUrl: null,
+        voiceLoading: false,
+        voiceProvider: null,
+        srt: null,
+        clipUrl: null,
+        clipJobId: null,
+        clipStatus: null,
+        clipLoading: false,
+      },
+      {
+        text: 'Daniel hét lớn: "Nằm xuống ngay!" khi còi báo động đỏ rực vang lên và bóng đen khổng lồ trùm kín cả căn phòng!',
+        imagePrompt: 'Cinematic vertical 9:16, Asset #1 Daniel shouts "Down!", flashing red emergency siren lights painting the metal corridor in bloody red hues, huge ominous shadow towering behind, theatrical horror film masterpiece',
+        camera: 'Rapid push-in, wide dynamic angle, emergency red strobe',
+        seconds: 4,
+        imageDataUrl: null,
+        imageLoading: false,
+        imageProvider: null,
+        audioUrl: null,
+        voiceLoading: false,
+        voiceProvider: null,
+        srt: null,
+        clipUrl: null,
+        clipJobId: null,
+        clipStatus: null,
+        clipLoading: false,
+      }
+    ]
+    setScenes(trang9Scenes)
+    say('ok', '🎬 Đã nạp thành công Kịch bản Phim Điện Ảnh chuẩn VeoGenie Trang 9 (4 phân cảnh hoàn chỉnh)!')
+  }
+
   const tplGen = async () => {
     if (!tplText.trim()) {
       say('err', 'Dán đoạn text dài cần đọc trước.')
@@ -1086,14 +1306,25 @@ export function VideoGenStudio({
             <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-700">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-bold text-white">📝 Text dài → Voice + SRT</div>
-                <button
-                  onClick={fillTplFromScript}
-                  disabled={!scenes.length}
-                  className={btnGhost + ' !py-1 !px-2 !text-[11px]'}
-                  title="Mapping lời thoại các scene vào template"
-                >
-                  📋 Lấy từ kịch bản
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={loadTrang9Template}
+                    className="px-2 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-bold hover:bg-purple-500/30 transition-all flex items-center gap-1"
+                    title="Nạp kịch bản mẫu điện ảnh chuẩn VeoGenie Trang-9"
+                  >
+                    <span>🎬 Mẫu Trang 9</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={fillTplFromScript}
+                    disabled={!scenes.length}
+                    className={btnGhost + ' !py-1 !px-2 !text-[10px]'}
+                    title="Mapping lời thoại các scene vào template"
+                  >
+                    📋 Lấy từ scene
+                  </button>
+                </div>
               </div>
               <textarea
                 value={tplText}
@@ -1105,6 +1336,18 @@ export function VideoGenStudio({
                 placeholder="Dán đoạn text dài cần đọc… (tự mapping từ kịch bản khi có scene)"
                 className={inputCls + ' mb-2'}
               />
+              <div className="mb-2.5">
+                <button
+                  type="button"
+                  onClick={convertTplTextToScenes}
+                  disabled={!tplText.trim()}
+                  className="w-full py-1.5 px-3 rounded-lg bg-gradient-to-r from-brand-emerald/20 to-brand-cyan/20 border border-brand-emerald/40 text-brand-emerald font-bold text-[11px] flex items-center justify-center gap-1.5 hover:bg-brand-emerald/30 transition-all disabled:opacity-40"
+                  title="Chuyển đổi toàn bộ nội dung kịch bản văn bản thành các phân cảnh Scenes 8K chuẩn điện ảnh"
+                >
+                  <Clapperboard className="w-3.5 h-3.5" />
+                  <span>⚡ Chuyển Sang Phân Cảnh (Scenes 8K)</span>
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-2 mb-2">
                 <div>
                   <label className={labelCls}>Provider</label>
@@ -1270,12 +1513,12 @@ export function VideoGenStudio({
       )}
 
       {/* Bước 1: kịch bản */}
-      <section className="p-4 rounded-2xl bg-dark-900/60 border border-dark-700">
+      <section id="studio-step-1" className="p-4 rounded-2xl bg-dark-900/60 border border-dark-700 scroll-mt-6">
         <h2 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
           <span className="w-6 h-6 rounded-full bg-brand-emerald/20 text-brand-emerald text-xs font-bold flex items-center justify-center">1</span>
           Kịch bản
         </h2>
-        <div className="grid md:grid-cols-[1fr_160px_200px] gap-3">
+        <div className="grid md:grid-cols-[1fr_140px_auto] gap-3">
           <div>
             <label className={labelCls}>Chủ đề video *</label>
             <input
@@ -1294,10 +1537,19 @@ export function VideoGenStudio({
               <option value={90}>90 giây</option>
             </select>
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
             <button onClick={genScript} disabled={scriptLoading} className={btnPrimary}>
               {scriptLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               Viết kịch bản
+            </button>
+            <button
+              onClick={loadTrang9Template}
+              type="button"
+              className="px-3 py-2 rounded-xl border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 text-xs font-bold flex items-center gap-1.5 transition-all"
+              title="Nạp nhanh kịch bản phân cảnh chuẩn VeoGenie Trang 9 (Cinematic Horror/Thriller)"
+            >
+              <Film className="w-3.5 h-3.5 text-purple-400" />
+              <span>🎬 Chuẩn Trang 9</span>
             </button>
           </div>
         </div>

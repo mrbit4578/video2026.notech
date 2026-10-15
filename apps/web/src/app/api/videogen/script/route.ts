@@ -41,8 +41,15 @@ export async function POST(req: NextRequest) {
     // 0. Try Gehihi Gemini 4 Argon
     if (provider === 'gehihi' || (gehihiKey && (!provider || provider === 'auto'))) {
       try {
-        const sys = `Bạn là đạo diễn và biên kịch video điện ảnh hàng đầu thế giới sử dụng mô hình Google Gemini 4 Argon 2026. Trả về DUY NHẤT JSON hợp lệ, không markdown: {"title":"","scenes":[{"text":"","image_prompt":"","camera":""} x ${nScenes}]}. "text" là lời thoại tiếng Việt lôi cuốn, giữ chân người xem. "image_prompt" là prompt ảnh tiếng Anh chi tiết phong cách điện ảnh 8k photorealistic cho khung hình dọc 9:16. "camera" là chuyển động máy quay (zoom-in, zoom-out, pan-left, pan-right, tilt-up).`
-        const user = `Chủ đề: ${cleanTopic}\nThời lượng: ${totalDuration}s, ${nScenes} scene.`
+        const sys = `Bạn là Tổng Đạo Diễn Điện Ảnh AI hàng đầu thế giới (chuẩn VeoGenie Trang-9 Workflow) sử dụng mô hình Google Gemini 4 Argon 2026.
+Nhiệm vụ: Chuyển đổi chủ đề/nội dung thành kịch bản phân cảnh phim điện ảnh kịch tính cao, chất lượng chuẩn Hollywood.
+Quy tắc sản xuất bắt buộc:
+1. NHÂN VẬT & ASSET NHẤT QUÁN: Đặt tên nhân vật chính rõ ràng và tag dạng "Asset: #1 [Tên nhân vật]" trong image_prompt xuyên suốt các cảnh.
+2. ÁNH SÁNG & BỐI CẢNH ĐIỆN ẢNH: "image_prompt" là prompt tiếng Anh chi tiết cao chuẩn 8k photorealistic cho khung hình dọc 9:16 (photorealistic live-action, volumetric practical lighting, deep shadows, cinematic color grading, dramatic rim light, KHÔNG có chữ trong ảnh, KHÔNG watermark).
+3. LỜI THOẠI & CĂNG THẲNG: "text" là lời thoại tiếng Việt dồn dập, tự nhiên, kịch tính, lôi cuốn giữ chân người xem ngay từ 3 giây đầu.
+4. CÚ MÁY CHUYÊN NGHIỆP: "camera" là chuyển động máy quay điện ảnh chính xác (dynamic push-in, low-angle tracking, slow dolly zoom, steady tracking pan, eye-level intense focus).
+Trả về DUY NHẤT JSON hợp lệ, không markdown: {"title":"","scenes":[{"text":"","image_prompt":"","camera":""} x ${nScenes}]}.`
+        const user = `Chủ đề: ${cleanTopic}\n${sourceScript ? `Nội dung nguồn:\n${sourceScript.slice(0, 3000)}\n` : ''}Thời lượng: ${totalDuration}s, ${nScenes} scene.`
 
         const endpoints = [
           process.env.GEHIHI_BASE_URL,
@@ -79,13 +86,13 @@ export async function POST(req: NextRequest) {
                   const scenes: SceneItem[] = parsed.scenes.slice(0, nScenes).map((s: any) => ({
                     text: String(s.text || ''),
                     imagePrompt: String(s.image_prompt || s.imagePrompt || cleanTopic),
-                    camera: String(s.camera || 'zoom-in'),
+                    camera: String(s.camera || 'dynamic push-in, eye-level'),
                     seconds: perScene
                   }))
                   return NextResponse.json({
                     provider: 'gehihi',
                     model: 'gemini-4-argon',
-                    title: parsed.title || `Kịch bản: ${cleanTopic}`,
+                    title: parsed.title || `Kịch bản điện ảnh: ${cleanTopic}`,
                     scenes
                   })
                 }
@@ -101,8 +108,15 @@ export async function POST(req: NextRequest) {
     // 1. Try Gemini API if key is present
     if (geminiKey && (!provider || provider === 'gemini' || provider === 'auto')) {
       try {
-        const sys = `Bạn là biên kịch video faceless tiếng Việt. Trả về DUY NHẤT JSON hợp lệ, không markdown: {"title":"","scenes":[{"text":"","image_prompt":"","camera":""} x ${nScenes}]}. "text" là lời thoại tiếng Việt để đọc TTS. "image_prompt" là prompt ảnh tiếng Anh chi tiết cho ảnh dọc 9:16 phong cách điện ảnh 8k không có chữ trong ảnh. "camera" là chuyển động máy quay.`
-        const user = `Chủ đề: ${cleanTopic}\nThời lượng: ${totalDuration}s, ${nScenes} scene.`
+        const sys = `Bạn là Tổng Đạo Diễn Điện Ảnh AI (chuẩn VeoGenie Trang-9 Cinematic Workflow).
+Nhiệm vụ: Tạo kịch bản phân cảnh phim điện ảnh kịch tính cho video dọc 9:16.
+Quy tắc:
+1. Giữ nhất quán nhân vật bằng tag "Asset: #1 [Tên nhân vật]" trong image_prompt.
+2. "image_prompt" là prompt ảnh tiếng Anh cực kỳ chi tiết chuẩn 8k photorealistic, volumetric practical lighting, deep shadows, điện ảnh chân thực, KHÔNG chữ trong ảnh, KHÔNG watermark.
+3. "text" là lời thoại tiếng Việt kịch tính, tự nhiên, cuốn hút để TTS đọc.
+4. "camera" là chuyển động máy quay điện ảnh (dynamic push-in, slow tracking pan, low-angle shot...).
+Trả về DUY NHẤT JSON hợp lệ, không markdown: {"title":"","scenes":[{"text":"","image_prompt":"","camera":""} x ${nScenes}]}.`
+        const user = `Chủ đề: ${cleanTopic}\n${sourceScript ? `Nội dung nguồn:\n${sourceScript.slice(0, 3000)}\n` : ''}Thời lượng: ${totalDuration}s, ${nScenes} scene.`
 
         const resp = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
@@ -126,13 +140,13 @@ export async function POST(req: NextRequest) {
               const scenes: SceneItem[] = parsed.scenes.slice(0, nScenes).map((s: any) => ({
                 text: String(s.text || ''),
                 imagePrompt: String(s.image_prompt || s.imagePrompt || cleanTopic),
-                camera: String(s.camera || 'slow push-in, cinematic'),
+                camera: String(s.camera || 'dynamic push-in, cinematic'),
                 seconds: perScene
               }))
               return NextResponse.json({
                 provider: 'google-gemini',
                 model: 'gemini-2.5-flash',
-                title: parsed.title || `Kịch bản: ${cleanTopic}`,
+                title: parsed.title || `Kịch bản điện ảnh: ${cleanTopic}`,
                 scenes
               })
             }
@@ -143,38 +157,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Intelligent Contextual Scene Generator (Always 100% reliable)
-    const topicKeywords = cleanTopic.toLowerCase()
-    let sceneTheme = 'kinh doanh công nghệ'
-    if (topicKeywords.includes('sức khỏe') || topicKeywords.includes('giảm cân') || topicKeywords.includes('ăn')) {
-      sceneTheme = 'chăm sóc sức khỏe'
-    } else if (topicKeywords.includes('tài chính') || topicKeywords.includes('đầu tư') || topicKeywords.includes('tiền')) {
-      sceneTheme = 'tài chính thông minh'
-    }
-
+    // 2. Intelligent Contextual Scene Generator (Chuẩn VeoGenie Trang-9 Cinematic Benchmark)
     const generatedScenes: SceneItem[] = [
       {
-        text: `Bí quyết thành công với ${cleanTopic} mà 90% mọi người đều bỏ lỡ trong năm 2026!`,
-        imagePrompt: `Cinematic vertical 9:16, striking hook visual about ${cleanTopic}, modern high-tech workspace, dramatic volumetric lighting, ultra realistic 8k, masterpiece`,
-        camera: 'Dynamic push-in, eye-level, intense focus',
+        text: `Bạn vẫn đang làm ${cleanTopic} theo phương pháp thủ công và tự hỏi tại sao mãi không có kết quả?`,
+        imagePrompt: `Cinematic vertical 9:16, Asset #1 Daniel looking intensely at glowing multi-screen analytical command center displaying ${cleanTopic} data spikes, atmospheric dark studio, volumetric rim light, ultra detailed 8k photorealistic live-action, deep shadows, no text, no watermark`,
+        camera: 'Dynamic push-in, eye-level intense focus, 24fps filmic shutter',
         seconds: perScene
       },
       {
-        text: `Vấn đề cốt lõi không nằm ở việc bạn có bao nhiêu công cụ, mà là cách bạn xây dựng quy trình tự động hóa nhất quán mỗi ngày.`,
-        imagePrompt: `Cinematic vertical 9:16, analytical mindset, glowing holographic workflow dashboard, sleek modern aesthetics, cinematic color grading, 8k resolution`,
-        camera: 'Slow tracking pan right, subtle depth of field',
+        text: `Trong khi bạn mất hàng giờ làm thủ công thì đối thủ đã ứng dụng AI và tự động hóa toàn bộ quy trình, chốt hàng trăm đơn mỗi ngày.`,
+        imagePrompt: `Cinematic vertical 9:16, Asset #2 Anna frustrated at cluttered desk with endless chaotic spreadsheets, red warning indicators on screen, dramatic practical lighting, moody cinematic shadows, 8k resolution`,
+        camera: 'Low-angle tracking pan right, high contrast shadows',
         seconds: perScene
       },
       {
-        text: `Bằng cách ứng dụng trí tuệ nhân tạo và tối ưu hóa chuyển đổi, bạn có thể nhân bản hiệu suất làm việc lên gấp 10 lần.`,
-        imagePrompt: `Cinematic vertical 9:16, futuristic AI automation engine, interconnected neural nodes and growth charts, high-end commercial quality`,
-        camera: 'Slow zoom out, wide angle, inspiring atmosphere',
+        text: `Và đây là chìa khóa: Hệ thống vận hành thế hệ mới kết hợp mô hình AI Argon 2026 giúp nhân bản hiệu suất làm việc lên gấp 10 lần.`,
+        imagePrompt: `Cinematic vertical 9:16, futuristic holographic AI workflow engine orchestrating ${cleanTopic} operations in real-time, sleek glowing emerald and cyan light beams, high-end cinema commercial look, 8k`,
+        camera: 'Smooth dolly zoom, wide dynamic view, inspiring atmosphere',
         seconds: perScene
       },
       {
-        text: `Hãy áp dụng ngay 3 bước đơn giản này vào thực tế để thấy sự thay đổi rõ rệt ngay trong tuần đầu tiên!`,
-        imagePrompt: `Cinematic vertical 9:16, confident creator celebrating victory in modern minimalist studio, golden hour lighting, photorealistic detail`,
-        camera: 'Front medium shot, gentle tilt up, bright and energetic',
+        text: `Đừng đứng nhìn người khác dẫn trước! Hãy áp dụng ngay quy trình này vào thực tế để bứt phá doanh số ngay hôm nay!`,
+        imagePrompt: `Cinematic vertical 9:16, Asset #1 Daniel smiling confidently presenting clear winning metrics on transparent futuristic pad, warm golden hour studio fill light, premium theatrical cinematic finish`,
+        camera: 'Front medium hero shot, gentle tilt-up, confident lighting',
         seconds: perScene
       }
     ]
@@ -184,7 +190,7 @@ export async function POST(req: NextRequest) {
       const idx = generatedScenes.length + 1
       generatedScenes.push({
         text: `Bước tiếp theo là đo lường dữ liệu và liên tục cải tiến nội dung để giữ vững thứ hạng chuyển đổi cao.`,
-        imagePrompt: `Cinematic vertical 9:16, futuristic smart screen analyzing real-time engagement analytics, neon accent lighting, 8k`,
+        imagePrompt: `Cinematic vertical 9:16, futuristic smart screen analyzing real-time engagement analytics, neon accent lighting, deep cinematic contrast, 8k photorealistic`,
         camera: 'Slow dolly shot, smooth parallax',
         seconds: perScene
       })
