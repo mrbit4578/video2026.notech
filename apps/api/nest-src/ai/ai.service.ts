@@ -31,6 +31,7 @@ const GEMINI_EMBED_MODEL = 'gemini-embedding-001'
  * sang OpenAI, rồi Gemini — miễn là workspace đã kết nối key đó.
  */
 export const FALLBACK_PRIORITY: AiProviderId[] = [
+  'gehihi',
   'openai',
   'gemini',
   'vyceai',

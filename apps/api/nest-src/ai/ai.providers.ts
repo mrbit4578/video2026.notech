@@ -20,6 +20,7 @@ export type AiProviderId =
   | 'koto'
   | 'apinex'
   | 'utim'
+  | 'gehihi'
 
 type ProviderKind = 'gemini' | 'openai-compatible' | 'anthropic' | 'tinyfish' | 'pollinations'
 
@@ -232,6 +233,18 @@ export const SUPPORTED_PROVIDERS: AiProviderMeta[] = [
       'Terminal AI agent (utim.dev): 3 model reasoning FREE — hợp chọn ngách, tối ưu context, dựng kịch bản. Tạo key tại utim.dev → API keys (đăng nhập tài khoản UTIM của bạn).',
     keyNote: 'Model miễn phí',
     baseUrl: 'https://api.utim.dev/v1',
+    kind: 'openai-compatible',
+  },
+  {
+    id: 'gehihi',
+    name: 'Gehihi Gemini Argon (2026)',
+    keyUrl: 'http://localhost:54984',
+    models: ['gemini-4-argon', 'gemini-3.1-pro', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'],
+    defaultModel: 'gemini-4-argon',
+    description:
+      'Mô hình tối tân Google Gemini 4 Argon qua cổng kết nối Gehihi (Hỗ trợ Local & Vercel). Toàn diện cho viết kịch bản, tối ưu hóa kịch bản, phân cảnh visual prompt và sinh video.',
+    keyNote: 'Mô hình Argon 2026',
+    baseUrl: process.env.GEHIHI_BASE_URL || 'http://127.0.0.1:54984/openai/v1',
     kind: 'openai-compatible',
   },
 ]

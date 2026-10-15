@@ -39,6 +39,7 @@ const PROVIDER_ACCENT: Record<string, string> = {
   koto: 'from-purple-500 to-indigo-600',
   apinex: 'from-emerald-400 to-cyan-500',
   utim: 'from-blue-600 to-slate-700',
+  gehihi: 'from-amber-500 via-rose-500 to-purple-600',
 }
 
 /** Code mau goi truc tiep API (chuan OpenAI) bang key cua user — cho tab "Quickstart". */

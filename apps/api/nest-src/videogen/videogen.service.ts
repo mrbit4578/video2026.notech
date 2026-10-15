@@ -41,6 +41,7 @@ const CLIP_MAX_MS = 12 * 60_000
 type Capability = 'chat' | 'image' | 'voice' | 'video'
 
 const CAPABILITIES: Record<string, Capability[]> = {
+  gehihi: ['chat', 'image', 'video'], // Mô hình Argon 2026: viết kịch bản, visual prompts, video
   gemini: ['chat', 'image', 'voice', 'video'],
   openai: ['chat', 'image', 'voice', 'video'],
   pollinations: ['image'], // FLUX schnell — miễn phí không giới hạn
@@ -57,7 +58,7 @@ const CAPABILITIES: Record<string, Capability[]> = {
 }
 
 /** Thứ tự ưu tiên khi user để provider='auto' */
-const AUTO_ORDER: AiProviderId[] = ['vyceai', 'gemini', 'openai']
+const AUTO_ORDER: AiProviderId[] = ['gehihi', 'vyceai', 'gemini', 'openai']
 
 export interface SceneOut {
   text: string
