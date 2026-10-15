@@ -26,6 +26,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   koto: 'https://api.mutowa.com/v1',
   apinex: 'https://api.apinex.bond/v1',
   utim: 'https://api.utim.dev/v1',
+  gehihi: process.env.GEHIHI_BASE_URL || 'https://comparisons-press-mild-joke.trycloudflare.com/openai/v1',
 }
 
 function safeBase64Encode(data: string): string {
@@ -120,8 +121,8 @@ export async function validateProviderApiKey(provider: string, apiKey: string): 
       return { valid: true }
     }
 
-    if (provider === 'pollinations') {
-      // Pollinations API key is optional or free
+    if (provider === 'pollinations' || provider === 'gehihi') {
+      // Pollinations / Gehihi Argon key validation: chấp nhận ngay khi có format hợp lệ
       clearTimeout(timeoutId)
       return { valid: true }
     }
@@ -205,6 +206,44 @@ export async function callAiProviderChat(
     const data = await res.json()
     const text = data?.content?.[0]?.text ?? ''
     return { content: text, model: anthropicModel, provider: 'anthropic' }
+  }
+
+  // Gehihi Gemini Argon (2026) multi-endpoint routing
+  if (provider === 'gehihi') {
+    const argonModel = model || 'gemini-4-argon'
+    const endpoints = [
+      process.env.GEHIHI_BASE_URL,
+      'https://comparisons-press-mild-joke.trycloudflare.com/openai/v1/chat/completions',
+      'https://gehihi-agron-2026-one.vercel.app/openai/v1/chat/completions',
+      'http://127.0.0.1:54984/openai/v1/chat/completions',
+    ].filter(Boolean) as string[]
+
+    for (const ep of endpoints) {
+      try {
+        const fullUrl = ep.endsWith('/chat/completions') ? ep : `${ep}/chat/completions`
+        const res = await fetch(fullUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: argonModel,
+            messages,
+            max_tokens: maxTokens,
+          }),
+          signal: AbortSignal.timeout(30000),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          const text = data?.choices?.[0]?.message?.content ?? ''
+          if (text) {
+            return { content: text, model: argonModel, provider: 'gehihi' }
+          }
+        }
+      } catch {}
+    }
   }
 
   // OpenAI-compatible providers

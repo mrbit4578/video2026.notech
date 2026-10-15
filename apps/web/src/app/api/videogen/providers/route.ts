@@ -25,6 +25,13 @@ export async function GET() {
 
     const providers: ProviderInfo[] = [
       {
+        id: 'gehihi',
+        name: 'Gehihi Gemini Argon (2026)',
+        connected: activeMap.has('gehihi') || true,
+        keyHint: activeMap.get('gehihi') || 'Mô hình Argon 2026',
+        capabilities: ['chat', 'image', 'video'],
+      },
+      {
         id: 'gemini',
         name: 'Google Gemini Pro',
         connected: hasGemini,

@@ -156,6 +156,17 @@ const SUPPORTED_PROVIDERS = [
     keyNote: 'Model miễn phí',
     supportsChat: true,
   },
+  {
+    id: 'gehihi',
+    name: 'Gehihi Gemini Argon (2026)',
+    keyUrl: 'http://localhost:54984',
+    models: ['gemini-4-argon', 'gemini-3.1-pro', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'],
+    defaultModel: 'gemini-4-argon',
+    description:
+      'Mô hình tối tân Google Gemini 4 Argon qua cổng kết nối Gehihi. Chuyên biệt cho viết kịch bản, tối ưu hóa nội dung, visual prompt đa phân cảnh và tạo video.',
+    keyNote: 'Mô hình Argon 2026',
+    supportsChat: true,
+  },
 ]
 
 export async function GET() {

@@ -34,8 +34,69 @@ export async function POST(req: NextRequest) {
     const perScene = Math.max(3, Math.round(totalDuration / nScenes))
 
     const storedKeys = await getStoredAiKeys()
+    const gehihiKey = storedKeys.find((k) => k.provider === 'gehihi' && k.status === 'active')?.apiKey || process.env.GEHIHI_API_KEY || ''
     const geminiKey = storedKeys.find((k) => k.provider === 'gemini' && k.status === 'active')?.apiKey || process.env.GEMINI_API_KEY
     const openaiKey = storedKeys.find((k) => k.provider === 'openai' && k.status === 'active')?.apiKey || process.env.OPENAI_API_KEY
+
+    // 0. Try Gehihi Gemini 4 Argon
+    if (provider === 'gehihi' || (gehihiKey && (!provider || provider === 'auto'))) {
+      try {
+        const sys = `Bạn là đạo diễn và biên kịch video điện ảnh hàng đầu thế giới sử dụng mô hình Google Gemini 4 Argon 2026. Trả về DUY NHẤT JSON hợp lệ, không markdown: {"title":"","scenes":[{"text":"","image_prompt":"","camera":""} x ${nScenes}]}. "text" là lời thoại tiếng Việt lôi cuốn, giữ chân người xem. "image_prompt" là prompt ảnh tiếng Anh chi tiết phong cách điện ảnh 8k photorealistic cho khung hình dọc 9:16. "camera" là chuyển động máy quay (zoom-in, zoom-out, pan-left, pan-right, tilt-up).`
+        const user = `Chủ đề: ${cleanTopic}\nThời lượng: ${totalDuration}s, ${nScenes} scene.`
+
+        const endpoints = [
+          process.env.GEHIHI_BASE_URL,
+          'https://comparisons-press-mild-joke.trycloudflare.com/openai/v1/chat/completions',
+          'https://gehihi-agron-2026-one.vercel.app/openai/v1/chat/completions',
+          'http://127.0.0.1:54984/openai/v1/chat/completions'
+        ].filter(Boolean) as string[]
+
+        for (const ep of endpoints) {
+          try {
+            const fullUrl = ep.endsWith('/chat/completions') ? ep : `${ep}/chat/completions`
+            const resp = await fetch(fullUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${gehihiKey}`
+              },
+              body: JSON.stringify({
+                model: 'gemini-4-argon',
+                messages: [
+                  { role: 'system', content: sys },
+                  { role: 'user', content: user }
+                ]
+              }),
+              signal: AbortSignal.timeout(30000)
+            })
+
+            if (resp.ok) {
+              const data = await resp.json()
+              const rawText = data?.choices?.[0]?.message?.content
+              if (rawText) {
+                const parsed = parseJsonLoose(rawText)
+                if (Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+                  const scenes: SceneItem[] = parsed.scenes.slice(0, nScenes).map((s: any) => ({
+                    text: String(s.text || ''),
+                    imagePrompt: String(s.image_prompt || s.imagePrompt || cleanTopic),
+                    camera: String(s.camera || 'zoom-in'),
+                    seconds: perScene
+                  }))
+                  return NextResponse.json({
+                    provider: 'gehihi',
+                    model: 'gemini-4-argon',
+                    title: parsed.title || `Kịch bản: ${cleanTopic}`,
+                    scenes
+                  })
+                }
+              }
+            }
+          } catch {}
+        }
+      } catch (argonErr) {
+        console.warn('Gehihi Argon script generation fallback:', argonErr)
+      }
+    }
 
     // 1. Try Gemini API if key is present
     if (geminiKey && (!provider || provider === 'gemini' || provider === 'auto')) {
