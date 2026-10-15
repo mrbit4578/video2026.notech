@@ -18,6 +18,9 @@ import {
   Workflow,
   FileSpreadsheet,
   RotateCcw,
+  Laptop,
+  FileJson,
+  FileText,
 } from 'lucide-react'
 import { api, ApiError, API_BASE_URL } from '../../lib/api'
 import { composeVideo } from '../../lib/video-compositor'
@@ -518,6 +521,91 @@ export function VideoGenStudio({
     window.open('/workflow', '_blank')
   }
 
+  /* ─── Xuất JSON Cho OpenMedia Desktop Video Studio ─── */
+  const exportDesktopJson = () => {
+    if (!scenes.length) {
+      say('err', 'Chưa có scene nào để xuất JSON Desktop.')
+      return
+    }
+    const projectData = {
+      app: 'OpenMedia Desktop Video Studio',
+      version: '2026.1.0',
+      projectTitle: title || topic || 'Video_Du_An',
+      topic: topic,
+      aspectRatio: '9:16',
+      resolution: '1080x1920',
+      voiceName: voiceName || 'vi-VN-HoaiMyNeural',
+      burnSubtitles: true,
+      scenes: scenes.map((s, idx) => ({
+        order: idx + 1,
+        text: s.text,
+        imagePrompt: s.imagePrompt || s.text,
+        camera: s.camera || 'zoom-in',
+        seconds: s.seconds || 4,
+      })),
+    }
+    const safeName = (title || topic || 'video-project')
+      .slice(0, 30)
+      .replace(/[^a-zA-Z0-9_\u00C0-\u1EF9-]/g, '_')
+    const filename = `${safeName}_desktop.json`
+    downloadText(filename, JSON.stringify(projectData, null, 2))
+    say('ok', `📥 Đã tải file "${filename}"! Mở app Desktop trên máy tính rồi chọn file để bắt đầu render.`)
+  }
+
+  const copyDesktopJson = () => {
+    if (!scenes.length) {
+      say('err', 'Chưa có scene nào để sao chép.')
+      return
+    }
+    const projectData = {
+      app: 'OpenMedia Desktop Video Studio',
+      version: '2026.1.0',
+      projectTitle: title || topic || 'Video_Du_An',
+      topic: topic,
+      aspectRatio: '9:16',
+      resolution: '1080x1920',
+      voiceName: voiceName || 'vi-VN-HoaiMyNeural',
+      burnSubtitles: true,
+      scenes: scenes.map((s, idx) => ({
+        order: idx + 1,
+        text: s.text,
+        imagePrompt: s.imagePrompt || s.text,
+        camera: s.camera || 'zoom-in',
+        seconds: s.seconds || 4,
+      })),
+    }
+    navigator.clipboard.writeText(JSON.stringify(projectData, null, 2))
+    say('ok', `📋 Đã sao chép kịch bản JSON! Mở app Desktop và bấm nút [📋 Dán từ Clipboard] là xong toàn bộ dự án.`)
+  }
+
+  const exportDesktopTxt = () => {
+    if (!scenes.length) {
+      say('err', 'Chưa có scene nào để xuất TXT.')
+      return
+    }
+    const lines = [
+      `# OPENMEDIA DESKTOP VIDEO SCRIPT 2026`,
+      `PROJECT: ${title || topic || 'Video_Du_An'}`,
+      `VOICE: ${voiceName || 'vi-VN-HoaiMyNeural'}`,
+      `ASPECT_RATIO: 9:16`,
+      ``,
+    ]
+    scenes.forEach((s, idx) => {
+      lines.push(`--- SCENE ${idx + 1} ---`)
+      lines.push(`DURATION: ${s.seconds || 4}`)
+      lines.push(`CAMERA: ${s.camera || 'zoom-in'}`)
+      lines.push(`PROMPT: ${s.imagePrompt || s.text}`)
+      lines.push(`SCRIPT: ${s.text}`)
+      lines.push(``)
+    })
+    const safeName = (title || topic || 'video-script')
+      .slice(0, 30)
+      .replace(/[^a-zA-Z0-9_\u00C0-\u1EF9-]/g, '_')
+    const filename = `${safeName}_script.txt`
+    downloadText(filename, lines.join('\n'))
+    say('ok', `📄 Đã tải file kịch bản "${filename}"!`)
+  }
+
   /* ─── Bước 2: sinh ảnh ─── */
   const genImage = async (i: number) => {
     const sc = scenes[i]
@@ -980,7 +1068,7 @@ export function VideoGenStudio({
         </button>
 
         {tplOpen && (
-          <div className="grid md:grid-cols-3 gap-3 mt-3">
+          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3 mt-3">
             {/* Card 1: voiceover song song + subtitle */}
             <div className="p-3 rounded-xl bg-dark-950/60 border border-dark-700 flex flex-col">
               <div className="text-xs font-bold text-white mb-1">🎙️ Voiceover song song + Subtitle</div>
@@ -1107,6 +1195,57 @@ export function VideoGenStudio({
                 </button>
               </div>
             </div>
+
+            {/* Card 4: OpenMedia Desktop Studio */}
+            <div className="p-3 rounded-xl bg-gradient-to-br from-brand-emerald/10 via-dark-950/80 to-dark-900 border border-brand-emerald/40 flex flex-col justify-between">
+              <div>
+                <div className="text-xs font-bold text-white mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Laptop className="w-4 h-4 text-brand-emerald" />
+                    <span>Desktop Video Studio</span>
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-emerald/20 text-brand-emerald border border-brand-emerald/40 font-bold">
+                    Khuyên dùng
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mb-3">
+                  Render FFmpeg 1080p trên máy tính: <b>siêu tốc</b>, không timeout, không crash RAM trình duyệt.
+                </p>
+              </div>
+
+              <div className="space-y-2 mt-auto">
+                <button
+                  onClick={copyDesktopJson}
+                  disabled={!scenes.length}
+                  className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-brand-emerald to-brand-cyan text-dark-950 font-bold text-xs flex items-center justify-center gap-2 hover:opacity-90 transition-all shadow-glow-emerald disabled:opacity-40"
+                  title="Copy toàn bộ kịch bản JSON vào Clipboard để dán 1-click trên Desktop Studio"
+                >
+                  <Copy className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Copy JSON Cho Desktop</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={exportDesktopJson}
+                    disabled={!scenes.length}
+                    className="px-2 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-700 text-slate-200 border border-dark-600 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-all disabled:opacity-40"
+                    title="Tải file JSON dự án cho Desktop App"
+                  >
+                    <FileJson className="w-3.5 h-3.5 text-brand-cyan" />
+                    <span>Tải JSON</span>
+                  </button>
+                  <button
+                    onClick={exportDesktopTxt}
+                    disabled={!scenes.length}
+                    className="px-2 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-700 text-slate-200 border border-dark-600 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-all disabled:opacity-40"
+                    title="Tải file TXT kịch bản phân cảnh"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Tải TXT</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </section>
@@ -1176,6 +1315,49 @@ export function VideoGenStudio({
               placeholder="Tiêu đề video"
               className={inputCls + ' font-bold'}
             />
+
+            {/* Desktop Studio Export Banner */}
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-brand-emerald/10 via-dark-900 to-brand-cyan/10 border border-brand-emerald/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg">
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Laptop className="w-4 h-4 text-brand-emerald" />
+                  <span>Sản Xuất Video Bằng OpenMedia Desktop Studio (Khuyên Dùng)</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-emerald/20 text-brand-emerald font-semibold border border-brand-emerald/30">
+                    Offline & Không Giới Hạn
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Xuất kịch bản sang Desktop App để tự động sinh ảnh 2K, giọng đọc Edge-TTS và render video 1080p bằng FFmpeg cực nhanh.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  onClick={copyDesktopJson}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-emerald to-brand-cyan text-dark-950 font-bold text-xs flex items-center gap-1.5 hover:opacity-90 transition-all shadow-glow-emerald"
+                  title="Copy JSON để dán 1-click trên Desktop Studio"
+                >
+                  <Copy className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Copy Cho Desktop</span>
+                </button>
+                <button
+                  onClick={exportDesktopJson}
+                  className="px-3 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-700 text-slate-200 border border-dark-600 font-semibold text-xs flex items-center gap-1.5 transition-all"
+                  title="Tải file JSON dự án"
+                >
+                  <FileJson className="w-3.5 h-3.5 text-brand-cyan" />
+                  <span>Tải JSON</span>
+                </button>
+                <button
+                  onClick={exportDesktopTxt}
+                  className="px-3 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-700 text-slate-200 border border-dark-600 font-semibold text-xs flex items-center gap-1.5 transition-all"
+                  title="Tải file TXT phân cảnh"
+                >
+                  <FileText className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Tải TXT</span>
+                </button>
+              </div>
+            </div>
             {scenes.map((s, i) => (
               <div key={i} className="p-3 rounded-xl bg-dark-950/60 border border-dark-700">
                 <div className="text-[11px] font-bold text-brand-cyan mb-2">Scene {i + 1} · {s.seconds}s</div>

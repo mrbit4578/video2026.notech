@@ -75,6 +75,14 @@ export default function WorkflowCanvasPage() {
             <Maximize2 className="w-3.5 h-3.5" />
             <span>{isFullscreen ? 'Thu nhỏ' : 'Toàn màn hình'}</span>
           </button>
+          <Link
+            href="/video-faceless"
+            className="px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all"
+            title="Mở Studio để xuất JSON / TXT cho Desktop App"
+          >
+            <Video className="w-3.5 h-3.5 text-purple-400" />
+            <span>Xuất Cho Desktop App</span>
+          </Link>
           <a
             href="/workflow-canvas/index.html"
             target="_blank"
