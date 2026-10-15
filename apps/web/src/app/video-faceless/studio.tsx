@@ -529,12 +529,12 @@ export function VideoGenStudio({
     }
     const projectData = {
       app: 'OpenMedia Desktop Video Studio',
-      version: '2026.2.0',
+      version: '2026.3.0',
       projectTitle: title || topic || 'Video_Du_An',
       topic: topic,
       aspectRatio: '9:16',
       resolution: '1080x1920',
-      motionMode: 'dynamic_motion',
+      motionMode: 'vfx_image',
       voiceName: voiceName || 'vi-VN-HoaiMyNeural',
       burnSubtitles: true,
       scenes: scenes.map((s, idx) => ({
@@ -551,7 +551,7 @@ export function VideoGenStudio({
       .replace(/[^a-zA-Z0-9_\u00C0-\u1EF9-]/g, '_')
     const filename = `${safeName}_desktop.json`
     downloadText(filename, JSON.stringify(projectData, null, 2))
-    say('ok', `📥 Đã tải file "${filename}"! Mở app Desktop trên máy tính rồi chọn file để bắt đầu render video chuyển động.`)
+    say('ok', `📥 Đã tải file "${filename}"! Mở app Desktop trên máy tính rồi chọn file để bắt đầu render video chuẩn ngữ cảnh.`)
   }
 
   const copyDesktopJson = () => {
@@ -561,12 +561,12 @@ export function VideoGenStudio({
     }
     const projectData = {
       app: 'OpenMedia Desktop Video Studio',
-      version: '2026.2.0',
+      version: '2026.3.0',
       projectTitle: title || topic || 'Video_Du_An',
       topic: topic,
       aspectRatio: '9:16',
       resolution: '1080x1920',
-      motionMode: 'dynamic_motion',
+      motionMode: 'vfx_image',
       voiceName: voiceName || 'vi-VN-HoaiMyNeural',
       burnSubtitles: true,
       scenes: scenes.map((s, idx) => ({
@@ -579,7 +579,7 @@ export function VideoGenStudio({
       })),
     }
     navigator.clipboard.writeText(JSON.stringify(projectData, null, 2))
-    say('ok', `📋 Đã sao chép kịch bản JSON! Mở app Desktop và bấm nút [📋 Dán từ Clipboard] để render video chuyển động.`)
+    say('ok', `📋 Đã sao chép kịch bản JSON! Mở app Desktop và bấm nút [📋 Dán từ Clipboard] để render video chuẩn ngữ cảnh.`)
   }
 
   const exportDesktopTxt = () => {
@@ -592,7 +592,7 @@ export function VideoGenStudio({
       `PROJECT: ${title || topic || 'Video_Du_An'}`,
       `VOICE: ${voiceName || 'vi-VN-HoaiMyNeural'}`,
       `ASPECT_RATIO: 9:16`,
-      `MOTION_MODE: dynamic_motion`,
+      `MOTION_MODE: vfx_image`,
       ``,
     ]
     scenes.forEach((s, idx) => {
